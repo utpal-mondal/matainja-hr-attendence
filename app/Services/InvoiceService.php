@@ -40,6 +40,7 @@ class InvoiceService
         'company.tax_id' => 'GSTIN / Tax ID',
         'company.email' => 'Billing email',
         'company.phone' => 'Phone',
+        'company.website' => 'Website',
     ];
 
     /** Allowed status changes: from => [to, ...]. */

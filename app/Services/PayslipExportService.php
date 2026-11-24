@@ -29,7 +29,7 @@ class PayslipExportService
      * What the payslips.pdf view needs.
      *
      * @param  Collection<int, Payslip>  $payslips
-     * @return array{run: PayrollRun, payslips: Collection<int, Payslip>, company: array<string, string|null>, inWords: \Closure(float): string}
+     * @return array{run: PayrollRun, payslips: Collection<int, Payslip>, company: array<string, string|null>}
      */
     public function viewData(PayrollRun $run, Collection $payslips): array
     {
@@ -37,7 +37,6 @@ class PayslipExportService
             'run' => $run,
             'payslips' => $payslips->loadMissing(['items', 'staff.payrollProfile']),
             'company' => $this->invoices->company(),
-            'inWords' => fn (float $amount) => $this->invoices->amountInWords($amount),
         ];
     }
 

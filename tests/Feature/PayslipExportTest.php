@@ -89,12 +89,14 @@ class PayslipExportTest extends TestCase
 
         $html = view('payslips.pdf', app(PayslipExportService::class)->viewData($this->run, $this->run->payslips()->whereKey($payslip->id)->get()))->render();
 
-        $this->assertStringContainsString('Payslip for October 2026', $html);
-        $this->assertStringContainsString('28,050.00', $html);
-        $this->assertStringContainsString('Twenty Eight Thousand and Fifty Rupees Only', $html);
-        $this->assertStringContainsString('Provident Fund', $html);
-        $this->assertStringContainsString('XXXXXXXX9012', $html);
-        $this->assertStringNotContainsString('123456789012', $html);
+        $this->assertStringContainsString('PAY SLIP', $html);
+        $this->assertStringContainsString('Period of Payment: Oct’26', $html);
+        $this->assertStringContainsString('A/C NO: 123456789012', $html);
+        $this->assertStringContainsString('IFSC: SBIN0001234', $html);
+        $this->assertStringContainsString('28050.00', $html);
+        $this->assertStringContainsString('<td>EPF</td>', $html);
+        $this->assertStringContainsString('<td>ESI</td><td class="amt">0.00</td>', $html);
+        $this->assertStringContainsString('Received By: '.$payslip->employee_name, $html);
         $this->assertStringContainsString('DRAFT', $html);
     }
 
