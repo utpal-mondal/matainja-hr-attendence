@@ -142,6 +142,10 @@
                                     data-mark-action="{{ route('admin.attendance.mark', $s) }}" data-mark-staff-id="{{ $s->id }}" data-mark-name="{{ $s->full_name }}"
                                     data-mark-current="{{ $currentMark }}" data-mark-in="{{ $a?->check_in_at?->copy()->setTimezone($tz)->format('H:i') }}"
                                     data-mark-out="{{ $a?->check_out_at?->copy()->setTimezone($tz)->format('H:i') }}">{{ $a ? 'Edit' : 'Mark' }}</button>
+                            @unless ($r['on_leave'])
+                                <button type="button" class="btn sm" data-open-dialog="leave-dialog"
+                                        data-leave-action="{{ route('admin.staff.leave.store', $s) }}" data-leave-staff-id="{{ $s->id }}" data-leave-name="{{ $s->full_name }}">+ Leave</button>
+                            @endunless
                             @if ($canAddWfh)
                                 @if ($r['wfh_approved'])
                                     <span class="muted small">WFH approved</span>
@@ -198,6 +202,8 @@
             </form>
         </dialog>
     @endif
+
+    @include('admin.staff._leave-dialog', ['leaveDate' => $date->toDateString(), 'leaveReturnTo' => 'attendance'])
 
     @php
         // Re-open the pop-up for the same employee when the last submit failed.

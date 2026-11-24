@@ -46,6 +46,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/employees/{staff}/wfh/{wfhRequest}/cancel', [Admin\StaffWfhController::class, 'cancel'])
             ->scopeBindings()->name('staff.wfh.cancel');
 
+        // Leave added by an admin (approved straight away)
+        Route::post('/employees/{staff}/leave', [Admin\StaffLeaveController::class, 'store'])->name('staff.leave.store');
+        Route::post('/employees/{staff}/leave/{leaveRequest}/cancel', [Admin\StaffLeaveController::class, 'cancel'])
+            ->scopeBindings()->name('staff.leave.cancel');
+
         // Employee salary (payroll setup)
         Route::get('/employees/{staff}/salary', [Admin\StaffSalaryController::class, 'show'])->name('staff.salary');
         Route::put('/employees/{staff}/salary/profile', [Admin\StaffSalaryController::class, 'updateProfile'])->name('staff.salary.profile');

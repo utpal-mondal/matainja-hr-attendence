@@ -17,6 +17,7 @@
         @if ($staff->exists)
             <div class="actions">
                 @unless (in_array($staff->employment_status, ['resigned', 'terminated'], true))
+                    <button type="button" class="btn" data-open-dialog="leave-dialog">Add leave</button>
                     <button type="button" class="btn" data-open-dialog="wfh-dialog">Add WFH</button>
                 @endunless
                 <a class="btn" href="{{ route('admin.staff.salary', $staff) }}">Salary</a>
@@ -226,6 +227,61 @@
             @endif
         </div>
 
+        @php
+            $leaveLabels = ['approved' => ['Approved', 'ok'], 'pending' => ['Waiting for approval', 'warn'], 'rejected' => ['Rejected', 'bad'], 'cancelled' => ['Cancelled', ''], 'withdrawn' => ['Withdrawn', '']];
+            $fmtDays = fn ($d) => rtrim(rtrim(number_format((float) $d, 1), '0'), '.');
+        @endphp
+        <div class="card" id="leave" style="margin-top:16px">
+            <div class="card-head">
+                <h2>Leave</h2>
+                @if ($leaveBalances !== [])
+                    <span class="muted small">
+                        {{ $today->year }}:
+                        @foreach ($leaveTypes->whereIn('id', array_keys($leaveBalances)) as $type){{ $loop->first ? '' : ' · ' }}{{ $type->name }} {{ $leaveBalances[$type->id] }}@endforeach
+                    </span>
+                @endif
+            </div>
+            @if ($leaveRequests->isEmpty())
+                <div class="card-body"><p class="muted" style="margin:0">No leave yet.</p></div>
+            @else
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Dates</th><th>Type</th><th class="right">Days</th><th>Reason</th><th>Status</th><th>Decided by</th><th class="right">Actions</th></tr></thead>
+                        <tbody>
+                        @foreach ($leaveRequests as $leave)
+                            @php
+                                [$label, $badge] = $leaveLabels[$leave->status] ?? [ucfirst($leave->status), ''];
+                                $decision = $leave->approvals->whereNotNull('decision')->last();
+                            @endphp
+                            <tr>
+                                <td class="nowrap">
+                                    {{ $leave->from_date->format('D, d M Y') }}@if (! $leave->from_date->isSameDay($leave->to_date)) – {{ $leave->to_date->format('D, d M Y') }}@endif
+                                    @if ($leave->partial_day)<span class="badge">Half day</span>@endif
+                                </td>
+                                <td>{{ $leave->leaveType?->name ?? '—' }}@if ($leave->leaveType && ! $leave->leaveType->paid) <span class="badge warn">Unpaid</span>@endif</td>
+                                <td class="right">{{ $fmtDays($leave->total_days) }}</td>
+                                <td>{{ $leave->reason ?: '—' }}</td>
+                                <td><span class="badge {{ $badge }}">{{ $label }}</span></td>
+                                <td class="muted small">{{ $decision?->approver?->name ?? '—' }}{{ $decision?->comments === 'Added by admin' ? ' (added by admin)' : '' }}</td>
+                                <td class="right">
+                                    @if ($leave->status === 'approved')
+                                        <form class="inline" method="POST" action="{{ route('admin.staff.leave.cancel', [$staff, $leave]) }}"
+                                              data-confirm="Cancel this {{ $leave->leaveType?->name ?? 'leave' }}? The {{ $fmtDays($leave->total_days) }} day(s) go back to the balance.">
+                                            @csrf
+                                            <button class="btn sm ghost" type="submit">Cancel</button>
+                                        </form>
+                                    @endif
+                                </td>
+                            </tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </div>
+
+        @include('admin.staff._leave-dialog', ['leaveStaff' => $staff, 'leaveDate' => $today->toDateString(), 'leaveBalances' => $leaveBalances])
+
         <dialog id="wfh-dialog" aria-labelledby="wfh-title" @if ($errors->wfh->any()) data-open-on-load @endif>
             <form method="POST" action="{{ route('admin.staff.wfh.store', $staff) }}" class="card-body">
                 @csrf
@@ -234,19 +290,19 @@
                 <div class="form-grid">
                     <div class="field">
                         <label for="wfh_from">From *</label>
-                        <input id="wfh_from" type="date" name="from_date" min="{{ $today->toDateString() }}" value="{{ old('from_date', $today->toDateString()) }}" required
+                        <input id="wfh_from" type="date" name="from_date" min="{{ $today->toDateString() }}" value="{{ $errors->wfh->any() ? old('from_date') : $today->toDateString() }}" required
                                class="{{ $errors->wfh->has('from_date') ? 'is-invalid' : '' }}">
                         @if ($errors->wfh->has('from_date'))<div class="error">{{ $errors->wfh->first('from_date') }}</div>@endif
                     </div>
                     <div class="field">
                         <label for="wfh_to">To *</label>
-                        <input id="wfh_to" type="date" name="to_date" min="{{ $today->toDateString() }}" value="{{ old('to_date', $today->toDateString()) }}" required
+                        <input id="wfh_to" type="date" name="to_date" min="{{ $today->toDateString() }}" value="{{ $errors->wfh->any() ? old('to_date') : $today->toDateString() }}" required
                                class="{{ $errors->wfh->has('to_date') ? 'is-invalid' : '' }}">
                         @if ($errors->wfh->has('to_date'))<div class="error">{{ $errors->wfh->first('to_date') }}</div>@endif
                     </div>
                     <div class="field wide">
                         <label for="wfh_reason">Reason</label>
-                        <input id="wfh_reason" type="text" name="reason" maxlength="2000" value="{{ old('reason') }}" placeholder="e.g. Recovering from surgery, internet installation">
+                        <input id="wfh_reason" type="text" name="reason" maxlength="2000" value="{{ $errors->wfh->any() ? old('reason') : '' }}" placeholder="e.g. Recovering from surgery, internet installation">
                     </div>
                 </div>
                 <div class="actions" style="justify-content:flex-end">

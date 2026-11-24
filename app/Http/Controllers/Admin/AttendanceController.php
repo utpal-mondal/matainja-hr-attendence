@@ -9,6 +9,7 @@ use App\Models\Branch;
 use App\Models\Department;
 use App\Models\Holiday;
 use App\Models\LeaveRequest;
+use App\Models\LeaveType;
 use App\Models\PayrollRun;
 use App\Models\Staff;
 use App\Models\WfhRequest;
@@ -52,6 +53,7 @@ class AttendanceController extends AdminController
             'branches' => Branch::orderBy('name')->get(['id', 'name']),
             'departments' => Department::orderBy('name')->get(['id', 'name']),
             'isWfhDay' => $isWfhDay,
+            'leaveTypes' => LeaveType::orderBy('name')->get(['id', 'name', 'paid']),
             'holiday' => $holiday,
             'tz' => $this->tz(),
         ]);
@@ -189,6 +191,9 @@ class AttendanceController extends AdminController
                 $a && $a->status === 'wfh' => ['wfh', 'WFH'],
                 $a && $a->status === 'late' => ['late', 'Late'],
                 $a && $a->check_in_at !== null => ['in', ucfirst(str_replace('_', ' ', $a->status ?: 'present'))],
+                // Marked by an admin without punch times: show what was marked, not "Not checked in".
+                $a && $a->status === 'half_day' => ['in', 'Half day'],
+                $a && $a->status === 'absent' => ['absent', 'Absent'],
                 $leave !== null => ['leave', 'On leave'.($leave->leaveType ? ' · '.$leave->leaveType->name : '')],
                 default => ['absent', $isPast ? 'Absent' : 'Not checked in'],
             };

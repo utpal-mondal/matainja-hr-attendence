@@ -6,11 +6,13 @@ use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Department;
 use App\Models\Designation;
+use App\Models\LeaveType;
 use App\Models\Role;
 use App\Models\Shift;
 use App\Models\Staff;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\LeaveService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -101,6 +103,10 @@ class StaffController extends AdminController
                 ->orderByRaw('CASE WHEN to_date >= ? THEN 0 ELSE 1 END', [$this->today()->toDateString()])
                 ->orderByDesc('from_date')->limit(10)->get(),
             'today' => $this->today(),
+            'leaveRequests' => $staff->leaveRequests()->with(['leaveType:id,name,paid', 'approvals.approver:id,name'])
+                ->orderByDesc('from_date')->limit(10)->get(),
+            'leaveTypes' => LeaveType::orderBy('name')->get(['id', 'name', 'paid']),
+            'leaveBalances' => app(LeaveService::class)->balanceLabels($staff, $this->today()->year),
         ]);
     }
 

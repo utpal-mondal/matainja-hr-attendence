@@ -116,6 +116,18 @@ class AttendanceMarkTest extends TestCase
         $this->assertSame(0, (int) $day->worked_minutes);
     }
 
+    public function test_marked_absent_today_shows_absent_not_not_checked_in(): void
+    {
+        $today = route('admin.attendance.index');
+        $this->get($today)->assertSee('Not checked in');
+
+        $this->from($today)->post(route('admin.attendance.mark', $this->staff), ['date' => '2026-11-24', 'mark' => 'absent']);
+        $this->get($today)->assertSee('>Absent</span>', false)->assertDontSee('Not checked in');
+
+        $this->from($today)->post(route('admin.attendance.mark', $this->staff), ['date' => '2026-11-24', 'mark' => 'half_day']);
+        $this->get($today)->assertSee('>Half day</span>', false);
+    }
+
     public function test_invalid_entries_are_refused(): void
     {
         $this->mark(['date' => '2026-11-25', 'mark' => 'present', 'check_in' => '09:30'])->assertSessionHasErrorsIn('mark', 'date');
