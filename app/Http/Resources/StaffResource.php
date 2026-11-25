@@ -36,6 +36,8 @@ class StaffResource extends JsonResource
             'designation_id' => $this->designation_id,
             'branch_id' => $this->branch_id,
             'team_id' => $this->team_id,
+            // Today's shift, so every employee shows their real hours (null = not assigned).
+            'shift' => $this->whenLoaded('currentShiftAssignment', fn () => $this->currentShiftAssignment?->shift?->only('id', 'name', 'start_time', 'end_time', 'grace_minutes')),
             'joining_date' => $this->joining_date?->toDateString(),
             'employment_status' => $this->employment_status,
         ];

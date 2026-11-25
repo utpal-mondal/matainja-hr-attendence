@@ -19,7 +19,7 @@ class StaffController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Staff::query()->with(['department', 'designation', 'branch', 'team', 'manager']);
+        $query = Staff::query()->with(['department', 'designation', 'branch', 'team', 'manager', 'currentShiftAssignment.shift']);
 
         $user = $request->user();
 
@@ -84,7 +84,7 @@ class StaffController extends Controller
         AuditLog::record('staff.created', $staff, null, $staff->toArray());
 
         return ApiResponder::success(
-            new StaffResource($staff->load(['department', 'designation', 'branch', 'team', 'manager'])),
+            new StaffResource($staff->load(['department', 'designation', 'branch', 'team', 'manager', 'currentShiftAssignment.shift'])),
             'Staff created successfully',
             201
         );
@@ -101,7 +101,7 @@ class StaffController extends Controller
         }
 
         return ApiResponder::success(
-            new StaffResource($staff->load(['department', 'designation', 'branch', 'team', 'manager', 'user'])),
+            new StaffResource($staff->load(['department', 'designation', 'branch', 'team', 'manager', 'currentShiftAssignment.shift', 'user'])),
             'Staff retrieved successfully'
         );
     }
@@ -134,7 +134,7 @@ class StaffController extends Controller
         AuditLog::record('staff.updated', $staff, $before, $staff->fresh()->toArray());
 
         return ApiResponder::success(
-            new StaffResource($staff->load(['department', 'designation', 'branch', 'team', 'manager'])),
+            new StaffResource($staff->load(['department', 'designation', 'branch', 'team', 'manager', 'currentShiftAssignment.shift'])),
             'Staff updated successfully'
         );
     }

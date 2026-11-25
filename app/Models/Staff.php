@@ -83,6 +83,23 @@ class Staff extends Model
         return $this->hasMany(StaffShiftAssignment::class);
     }
 
+    /**
+     * The assignment in effect today (latest effective_from wins, so the
+     * hand-over day of a shift change already shows the new shift). Same rule
+     * as AttendanceService::currentShiftAssignment, but eager-loadable for
+     * staff lists.
+     */
+    public function currentShiftAssignment(): HasOne
+    {
+        $today = now()->toDateString();
+
+        return $this->hasOne(StaffShiftAssignment::class)->ofMany(
+            ['effective_from' => 'max', 'id' => 'max'],
+            fn ($q) => $q->whereDate('effective_from', '<=', $today)
+                ->where(fn ($q) => $q->whereNull('effective_to')->orWhereDate('effective_to', '>=', $today)),
+        );
+    }
+
     public function leaveBalances(): HasMany
     {
         return $this->hasMany(LeaveBalance::class);
