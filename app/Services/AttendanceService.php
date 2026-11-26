@@ -198,6 +198,64 @@ class AttendanceService
         });
     }
 
+    /**
+     * Apply an approved attendance-correction request. The requested times
+     * replace the recorded ones (a missing value keeps what was recorded) and
+     * the day is re-evaluated exactly like a punch: shift, WFH / late /
+     * present status, late, worked and overtime minutes. The original punches
+     * stay in attendance_events.
+     *
+     * @param  array{check_in_at?: string|null, check_out_at?: string|null}  $values
+     * @param  array<string, mixed>  $metadata  extra details for the correction event
+     */
+    public function applyCorrection(Staff $staff, string $workDate, array $values, ?int $attendanceId = null, array $metadata = []): Attendance
+    {
+        return DB::transaction(function () use ($staff, $workDate, $values, $attendanceId, $metadata) {
+            $attendance = ($attendanceId ? Attendance::whereKey($attendanceId)->lockForUpdate()->first() : null)
+                ?? Attendance::where('staff_id', $staff->id)->whereDate('work_date', $workDate)->lockForUpdate()->first()
+                ?? new Attendance(['staff_id' => $staff->id, 'work_date' => $workDate]);
+            $before = $attendance->exists ? $attendance->only(['status', 'check_in_at', 'check_out_at']) : null;
+
+            // Stored in the app timezone, like app punches.
+            $appTz = config('app.timezone');
+            $parse = fn ($v) => $v ? CarbonImmutable::parse($v)->setTimezone($appTz) : null;
+            $in = $parse($values['check_in_at'] ?? null) ?? $parse($attendance->check_in_at);
+            $out = $parse($values['check_out_at'] ?? null) ?? $parse($attendance->check_out_at);
+            if ($in && $out && $out->lte($in)) {
+                throw ValidationException::withMessages(['check_out_at' => ['Check-out must be after check-in.']]);
+            }
+
+            $assignment = $this->currentShiftAssignment($staff, $workDate);
+            $late = $in ? $this->lateMinutes($staff, $assignment, $in, $workDate) : 0;
+            $status = match (true) {
+                ! $in => $attendance->status ?: 'absent',
+                $this->isWfhDay($staff, $workDate) => 'wfh',
+                $late > 0 => 'late',
+                default => 'present',
+            };
+
+            $attendance->fill([
+                'shift_id' => $attendance->shift_id ?? $assignment?->shift_id,
+                'check_in_at' => $in,
+                'check_out_at' => $out,
+                'status' => $status,
+                'late_minutes' => $status === 'late' ? $late : 0,
+                'source' => 'correction',
+            ]);
+            $attendance->worked_minutes = $this->workedMinutes($attendance);
+            $attendance->overtime_minutes = $this->overtimeMinutes($attendance);
+            $attendance->save();
+
+            $attendance->events()->create([
+                'event_type' => 'correction',
+                'occurred_at' => CarbonImmutable::now(),
+                'metadata' => $metadata + ['before' => $before, 'applied' => array_filter($values)],
+            ]);
+
+            return $attendance;
+        });
+    }
+
     public function startBreak(Attendance $attendance, string $breakType = 'general'): BreakRecord
     {
         if (! $attendance->check_in_at || $attendance->check_out_at) {

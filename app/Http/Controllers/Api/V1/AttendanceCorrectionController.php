@@ -9,10 +9,15 @@ use App\Models\AuditLog;
 use App\Support\ApiResponder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Services\AttendanceService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class AttendanceCorrectionController extends Controller
 {
+    public function __construct(private readonly AttendanceService $attendance) {}
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -39,15 +44,37 @@ class AttendanceCorrectionController extends Controller
             'attendance_id' => ['nullable', 'exists:attendance,id'],
             'requested_values' => ['required', 'array'],
             'requested_values.check_in_at' => ['nullable', 'date'],
-            'requested_values.check_out_at' => ['nullable', 'date'],
+            'requested_values.check_out_at' => ['nullable', 'date', 'after:requested_values.check_in_at'],
             'reason' => ['required', 'string', 'max:2000'],
+        ], [
+            'requested_values.check_out_at.after' => 'Check-out time must be after check-in time.',
         ]);
 
+        $values = array_filter([
+            'check_in_at' => $validated['requested_values']['check_in_at'] ?? null,
+            'check_out_at' => $validated['requested_values']['check_out_at'] ?? null,
+        ]);
+        if ($values === []) {
+            throw ValidationException::withMessages(['requested_values' => ['Enter the check-in or check-out time to correct.']]);
+        }
+
+        $staffId = $request->user()->staff->id;
+        $workDate = Carbon::parse($validated['work_date'])->toDateString();
+
+        $alreadyPending = AttendanceCorrectionRequest::where('staff_id', $staffId)
+            ->whereDate('work_date', $workDate)
+            ->where('status', 'pending')
+            ->exists();
+        if ($alreadyPending) {
+            throw ValidationException::withMessages(['work_date' => ['You already have a pending correction request for this date.']]);
+        }
+
         $correction = AttendanceCorrectionRequest::create([
-            'staff_id' => $request->user()->staff->id,
-            'attendance_id' => $validated['attendance_id'] ?? null,
-            'work_date' => $validated['work_date'],
-            'requested_values' => $validated['requested_values'],
+            'staff_id' => $staffId,
+            'attendance_id' => $validated['attendance_id']
+                ?? Attendance::where('staff_id', $staffId)->whereDate('work_date', $workDate)->value('id'),
+            'work_date' => $workDate,
+            'requested_values' => $values,
             'reason' => $validated['reason'],
         ]);
 
@@ -68,26 +95,25 @@ class AttendanceCorrectionController extends Controller
                 'reviewed_at' => now(),
             ]);
 
-            // Apply the correction — original events are preserved in attendance_events.
-            $attendance = $correction->attendance
-                ?? Attendance::firstOrCreate([
-                    'staff_id' => $correction->staff_id,
-                    'work_date' => $correction->work_date,
-                ], ['source' => 'correction']);
+            // Apply the correction and re-evaluate the day (status, shift,
+            // late / worked / overtime minutes) like a punch. The original
+            // punches stay in attendance_events.
+            $attendance = $this->attendance->applyCorrection(
+                $correction->staff,
+                $correction->work_date->toDateString(),
+                $correction->requested_values ?? [],
+                $correction->attendance_id,
+                ['correction_request_id' => $correction->id, 'by_user_id' => $request->user()->id],
+            );
 
-            $values = array_filter($correction->requested_values ?? []);
-            $attendance->update(array_merge($values, ['source' => 'correction']));
-
-            $attendance->events()->create([
-                'event_type' => 'correction',
-                'occurred_at' => now(),
-                'metadata' => ['correction_request_id' => $correction->id, 'applied' => $values],
-            ]);
+            if ($correction->attendance_id !== $attendance->id) {
+                $correction->update(['attendance_id' => $attendance->id]);
+            }
         });
 
         AuditLog::record('attendance.correction_approved', $correction);
 
-        return ApiResponder::success($correction->fresh(), 'Correction approved');
+        return ApiResponder::success($correction->fresh(['attendance']), 'Correction approved');
     }
 
     public function reject(Request $request, AttendanceCorrectionRequest $correction): JsonResponse
