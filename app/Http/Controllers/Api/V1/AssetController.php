@@ -10,6 +10,7 @@ use App\Support\ApiResponder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class AssetController extends Controller
 {
@@ -31,9 +32,58 @@ class AssetController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'category' => ['nullable', 'string', 'max:100'],
             'serial_number' => ['nullable', 'string', 'max:255'],
+            'image' => self::IMAGE_RULES,
         ]);
 
-        return ApiResponder::success(Asset::create($validated), 'Asset registered', 201);
+        unset($validated['image']);
+        if ($request->hasFile('image')) {
+            $validated['image_path'] = $request->file('image')->store('assets', 'local');
+        }
+
+        $asset = Asset::create($validated);
+        AuditLog::record('asset.created', $asset);
+
+        return ApiResponder::success($asset, 'Asset registered', 201);
+    }
+
+    /** Optional asset photo: JPG / PNG / WebP up to 5 MB. */
+    private const IMAGE_RULES = ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'];
+
+    /**
+     * POST /assets/{asset}/image — add or replace the asset's photo.
+     */
+    public function uploadImage(Request $request, Asset $asset): JsonResponse
+    {
+        $request->validate(['image' => ['required', ...array_slice(self::IMAGE_RULES, 1)]]);
+
+        $old = $asset->image_path;
+        $asset->update(['image_path' => $request->file('image')->store('assets', 'local')]);
+        if ($old) {
+            Storage::disk('local')->delete($old);
+        }
+
+        return ApiResponder::success($asset->fresh(), 'Asset image saved');
+    }
+
+    /**
+     * GET /assets/{asset}/image — the asset's photo (404 when it has none).
+     */
+    public function image(Request $request, Asset $asset)
+    {
+        $user = $request->user();
+        $canManage = $user->isAdmin() || $user->hasRole('Manager');
+        $myStaffId = $user->staff?->id;
+        if (! $canManage && ($myStaffId === null || $asset->currentAssignment?->staff_id !== $myStaffId)) {
+            return ApiResponder::error('Not found.', 404);
+        }
+
+        if (! $asset->image_path || ! Storage::disk('local')->exists($asset->image_path)) {
+            return ApiResponder::error('This asset has no image.', 404);
+        }
+
+        return Storage::disk('local')->response($asset->image_path, null, [
+            'Cache-Control' => 'private, max-age=86400',
+        ]);
     }
 
     public function show(Asset $asset): JsonResponse

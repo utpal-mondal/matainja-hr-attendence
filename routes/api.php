@@ -176,13 +176,18 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('/meetings/{meeting}/cancel', [MeetingController::class, 'cancel'])->name('meetings.cancel');
         Route::post('/meetings/{meeting}/response', [MeetingController::class, 'respond'])->name('meetings.response');
 
-        // Assets
-        Route::get('/assets', [AssetController::class, 'index'])->middleware('role:HR Admin,Super Admin')->name('assets.index');
-        Route::post('/assets', [AssetController::class, 'store'])->middleware('role:HR Admin,Super Admin')->name('assets.store');
-        Route::get('/assets/{asset}', [AssetController::class, 'show'])->middleware('role:HR Admin,Super Admin')->name('assets.show');
-        Route::patch('/assets/{asset}', [AssetController::class, 'update'])->middleware('role:HR Admin,Super Admin')->name('assets.update');
-        Route::post('/assets/{asset}/assign', [AssetController::class, 'assign'])->middleware('role:HR Admin,Super Admin')->name('assets.assign');
-        Route::post('/assets/{asset}/return', [AssetController::class, 'returnAsset'])->middleware('role:HR Admin,Super Admin')->name('assets.return');
+        // Assets (managed by Super Admin, HR Admin and Managers)
+        Route::middleware('role:Manager,HR Admin,Super Admin')->group(function () {
+            Route::get('/assets', [AssetController::class, 'index'])->name('assets.index');
+            Route::post('/assets', [AssetController::class, 'store'])->name('assets.store');
+            Route::get('/assets/{asset}', [AssetController::class, 'show'])->name('assets.show');
+            Route::patch('/assets/{asset}', [AssetController::class, 'update'])->name('assets.update');
+            Route::post('/assets/{asset}/image', [AssetController::class, 'uploadImage'])->name('assets.image.upload');
+            Route::post('/assets/{asset}/assign', [AssetController::class, 'assign'])->name('assets.assign');
+            Route::post('/assets/{asset}/return', [AssetController::class, 'returnAsset'])->name('assets.return');
+        });
+        // Also readable by the employee the asset is assigned to.
+        Route::get('/assets/{asset}/image', [AssetController::class, 'image'])->name('assets.image');
 
         // Clients
         Route::get('/clients', [ClientController::class, 'index'])->middleware('role:Manager,HR Admin,Super Admin')->name('clients.index');
