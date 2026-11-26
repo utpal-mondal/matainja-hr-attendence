@@ -1,0 +1,32 @@
+#!/bin/sh
+# Bump the number returned by /github-pull-number in routes/web.php on every commit.
+FILE="routes/web.php"
+PATTERN="/github-pull-number"
+
+# Skip if nothing is staged.
+git diff --cached --quiet && exit 0
+
+# Read the current number from the staged version of the file.
+CURRENT=$(git show ":$FILE" 2>/dev/null | grep -A1 "$PATTERN" | grep -o 'return [0-9]\+' | grep -o '[0-9]\+')
+[ -z "$CURRENT" ] && exit 0
+NEXT=$((CURRENT + 1))
+
+bump() {
+    awk -v next_num="$NEXT" -v pat="$PATTERN" '
+        index($0, pat) { found = 1 }
+        found && /return [0-9]+;/ { sub(/return [0-9]+;/, "return " next_num ";"); found = 0 }
+        { print }
+    '
+}
+
+# Update the staged copy only, so unrelated unstaged edits in the file stay unstaged.
+MODE=$(git ls-files -s "$FILE" | cut -d' ' -f1)
+BLOB=$(git show ":$FILE" | bump | git hash-object -w --stdin)
+git update-index --cacheinfo "$MODE,$BLOB,$FILE"
+
+# Update the working copy too, so it matches.
+if [ -f "$FILE" ]; then
+    bump < "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
+fi
+
+echo "pre-commit: github-pull-number $CURRENT -> $NEXT"
