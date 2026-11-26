@@ -37,6 +37,38 @@
         </details>
     @endif
 
+    @if ($type === 'holidays')
+        @php $skipped = session('holiday_import_skipped', []); @endphp
+        @if ($skipped)
+            <div class="alert error" role="alert">
+                <div>
+                    <strong>These rows were not imported:</strong>
+                    <ul>
+                        @foreach ($skipped as $row)
+                            <li>Line {{ $row['line'] }} · {{ $row['name'] }}: {{ $row['reason'] }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            </div>
+        @endif
+        <details class="card" style="margin-bottom:16px" @if ($skipped || $errors->has('file')) open @endif>
+            <summary class="card-head"><h2>⇪ Import holidays from CSV</h2><span class="muted small">Add a whole year's list at once</span></summary>
+            <form method="POST" action="{{ route('admin.holidays.import') }}" enctype="multipart/form-data" class="card-body">
+                @csrf
+                <p class="muted" style="margin:0 0 12px">
+                    Columns: <strong>Date</strong> and <strong>Name</strong> (required), <strong>Type</strong> (Public, Optional or Company; empty = Public)
+                    and <strong>Branch</strong> (branch name or code; empty = all branches). Dates like 26/01/{{ now()->year + 1 }}, {{ now()->year + 1 }}-01-26 or 26 January {{ now()->year + 1 }}.
+                    Days that already have a holiday for the same branch are skipped.
+                </p>
+                <div class="toolbar">
+                    <input type="file" name="file" accept=".csv,text/csv" required class="{{ $errors->has('file') ? 'is-invalid' : '' }}">
+                    <button class="btn primary" type="submit">Import</button>
+                    <a class="btn ghost" href="{{ route('admin.holidays.import.template') }}">Download template</a>
+                </div>
+            </form>
+        </details>
+    @endif
+
     <div class="card">
         <div class="card-head">
             <h2>{{ $def['title'] }} <span class="muted small">({{ $rows->total() }})</span></h2>

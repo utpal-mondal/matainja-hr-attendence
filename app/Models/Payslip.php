@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -58,6 +60,21 @@ class Payslip extends Model
     public function salaryStructure(): BelongsTo
     {
         return $this->belongsTo(StaffSalaryStructure::class, 'staff_salary_structure_id');
+    }
+
+    /**
+     * Payslips of locked or paid runs (final figures an employee may see),
+     * newest month first. Draft runs can still change, so they stay hidden.
+     *
+     * @param  Builder<Payslip>  $query
+     */
+    #[Scope]
+    protected function released(Builder $query): void
+    {
+        $query->join('payroll_runs', 'payroll_runs.id', '=', 'payslips.payroll_run_id')
+            ->where('payroll_runs.status', '!=', 'draft')
+            ->orderByDesc('payroll_runs.year')->orderByDesc('payroll_runs.month')
+            ->select('payslips.*');
     }
 
     public function items(): HasMany

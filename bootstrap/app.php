@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureEmployeePortal;
 use App\Http\Middleware\EnsureSuperAdminWeb;
 use App\Http\Middleware\EnsureUserHasRole;
 use Illuminate\Foundation\Application;
@@ -18,13 +19,19 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => EnsureUserHasRole::class,
             'super.admin' => EnsureSuperAdminWeb::class,
+            'employee.portal' => EnsureEmployeePortal::class,
         ]);
 
-        // Web admin panel: guests go to its login page and signed-in users
-        // hitting the login page go to the dashboard. API requests keep
-        // getting JSON 401s (see shouldRenderJsonWhen below).
-        $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : route('admin.login'));
-        $middleware->redirectUsersTo(fn () => route('admin.dashboard'));
+        // Web admin panel and employee portal share one login page; signed-in
+        // users hitting it go to their home. API requests keep getting JSON
+        // 401s (see shouldRenderJsonWhen below).
+        $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : route('login'));
+        $middleware->redirectUsersTo(function (Request $request) {
+            $user = $request->user();
+            $wantsPortal = $request->is('portal', 'portal/*') && $user?->staff;
+
+            return $wantsPortal || ! $user?->hasRole('Super Admin') ? route('portal.dashboard') : route('admin.dashboard');
+        });
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

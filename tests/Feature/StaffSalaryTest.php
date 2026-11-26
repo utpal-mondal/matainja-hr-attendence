@@ -194,6 +194,6 @@ class StaffSalaryTest extends TestCase
     {
         auth()->logout();
 
-        $this->get(route('admin.staff.salary', $this->staff))->assertRedirect(route('admin.login'));
+        $this->get(route('admin.staff.salary', $this->staff))->assertRedirect(route('login'));
     }
 }

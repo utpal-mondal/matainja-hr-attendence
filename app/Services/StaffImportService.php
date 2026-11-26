@@ -6,7 +6,7 @@ use App\Models\Department;
 use App\Models\Designation;
 use App\Models\Staff;
 use App\Models\User;
-use Illuminate\Support\Carbon;
+use App\Support\CsvDate;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use SplFileObject;
@@ -312,26 +312,7 @@ class StaffImportService
     /** Day-first dates (19.06.2025, 17/12/22), ISO dates, or text ("9th October 2026"). */
     private function parseDate(string $value): ?string
     {
-        $value = trim($value);
-
-        if (preg_match('/^(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})$/', $value, $m)) {
-            [$year, $month, $day] = [(int) $m[1], (int) $m[2], (int) $m[3]];
-        } elseif (preg_match('/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2}|\d{4})$/', $value, $m)) {
-            [$day, $month, $year] = [(int) $m[1], (int) $m[2], (int) $m[3]];
-            if ($year < 100) {
-                $year += $year <= ((int) now()->format('y') + 1) ? 2000 : 1900;
-            }
-        } elseif (preg_match('/[a-z]/i', $value) && ($time = strtotime(preg_replace('/(\d)(st|nd|rd|th)\b/i', '$1', $value))) !== false) {
-            [$year, $month, $day] = array_map('intval', explode('-', date('Y-m-d', $time)));
-        } else {
-            return null;
-        }
-
-        if (! checkdate($month, $day, $year) || $year < 1950 || $year > (int) now()->year + 1) {
-            return null;
-        }
-
-        return Carbon::create($year, $month, $day)->toDateString();
+        return CsvDate::parse($value);
     }
 
     private function cleanName(string $value): string

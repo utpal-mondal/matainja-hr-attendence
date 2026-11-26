@@ -1,10 +1,27 @@
 <?php
 
 use App\Http\Controllers\Admin;
+use App\Http\Controllers\LoginController;
+use App\Http\Controllers\Portal;
 use App\Models\Invoice;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', fn () => redirect()->route('admin.dashboard'));
+Route::get('/', fn () => redirect()->route('login'));
+
+/*
+| One sign-in page for everyone: Super Admins go on to the admin panel,
+| employees to the employee portal. Signed-in users are sent straight home.
+*/
+Route::middleware('guest')->group(function () {
+    Route::get('/login', [LoginController::class, 'showLogin'])->name('login');
+    Route::post('/login', [LoginController::class, 'login'])->middleware('throttle:6,1')->name('login.attempt');
+    Route::get('/github-pull-number', function () {
+        return 108;
+    });
+});
+// Old sign-in addresses, kept so bookmarks still work.
+Route::redirect('/admin/login', '/login');
+Route::redirect('/portal/login', '/login');
 
 /*
 | Super Admin web panel (/admin). Session auth on the "web" guard; the
@@ -14,13 +31,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
     // Organisation logo for the sidebar and the sign-in page (public: it's on every invoice).
     Route::get('/logo', [Admin\SettingController::class, 'logo'])->name('logo');
 
-    Route::middleware('guest')->group(function () {
-        Route::get('/login', [Admin\AuthController::class, 'showLogin'])->name('login');
-        Route::post('/login', [Admin\AuthController::class, 'login'])->middleware('throttle:6,1')->name('login.attempt');
-    });
-
     Route::middleware(['auth', 'super.admin'])->group(function () {
-        Route::post('/logout', [Admin\AuthController::class, 'logout'])->name('logout');
+        Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
 
         Route::get('/', [Admin\DashboardController::class, 'index'])->name('dashboard');
 
@@ -68,6 +80,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::put('/roles/{role}', [Admin\RoleController::class, 'update'])->name('roles.update');
 
         // Organisation setup (branches, departments, designations, teams, shifts, holidays, leave types)
+        Route::post('/organisation/holidays/import', [Admin\HolidayImportController::class, 'store'])->name('holidays.import');
+        Route::get('/organisation/holidays/import/template.csv', [Admin\HolidayImportController::class, 'template'])->name('holidays.import.template');
         Route::get('/organisation/{type}', [Admin\OrgController::class, 'index'])->name('org.index');
         Route::post('/organisation/{type}', [Admin\OrgController::class, 'store'])->name('org.store');
         Route::get('/organisation/{type}/{id}/edit', [Admin\OrgController::class, 'edit'])->name('org.edit');
@@ -122,5 +136,40 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/settings', [Admin\SettingController::class, 'index'])->name('settings.index');
         Route::put('/settings', [Admin\SettingController::class, 'update'])->name('settings.update');
         Route::get('/audit-log', [Admin\AuditLogController::class, 'index'])->name('audit.index');
+    });
+});
+
+/*
+| Employee web portal (/portal). Same "web" session guard and the same
+| password as the mobile app, for any active employee. It is view-and-request
+| only: check-in and check-out stay in the mobile app.
+*/
+Route::prefix('portal')->name('portal.')->group(function () {
+    Route::middleware(['auth', 'employee.portal'])->group(function () {
+        Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
+
+        Route::get('/', [Portal\DashboardController::class, 'index'])->name('dashboard');
+
+        Route::get('/profile', [Portal\ProfileController::class, 'show'])->name('profile');
+        Route::put('/profile', [Portal\ProfileController::class, 'update'])->name('profile.update');
+        Route::put('/profile/password', [Portal\ProfileController::class, 'updatePassword'])->name('profile.password');
+
+        Route::get('/attendance', [Portal\AttendanceController::class, 'index'])->name('attendance');
+
+        Route::get('/leave', [Portal\LeaveController::class, 'index'])->name('leave.index');
+        Route::post('/leave', [Portal\LeaveController::class, 'store'])->name('leave.store');
+        Route::post('/leave/{leaveRequest}/withdraw', [Portal\LeaveController::class, 'withdraw'])->name('leave.withdraw');
+        Route::post('/leave/{leaveRequest}/cancel', [Portal\LeaveController::class, 'cancel'])->name('leave.cancel');
+
+        Route::get('/wfh', [Portal\WfhController::class, 'index'])->name('wfh.index');
+        Route::post('/wfh', [Portal\WfhController::class, 'store'])->name('wfh.store');
+
+        Route::get('/regularization', [Portal\RegularizationController::class, 'index'])->name('regularization.index');
+        Route::post('/regularization', [Portal\RegularizationController::class, 'store'])->name('regularization.store');
+
+        Route::get('/payslips', [Portal\PayslipController::class, 'index'])->name('payslips.index');
+        Route::get('/payslips/{payslip}/pdf', [Portal\PayslipController::class, 'pdf'])->name('payslips.pdf');
+
+        Route::get('/holidays', [Portal\HolidayController::class, 'index'])->name('holidays');
     });
 });

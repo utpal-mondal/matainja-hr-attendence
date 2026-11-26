@@ -244,6 +244,7 @@ class StaffController extends AdminController
             'joining_date' => ['nullable', 'date'],
             'employment_status' => ['required', Rule::in(self::STATUSES)],
             'create_login' => ['boolean'],
+            'web_login_enabled' => ['boolean'],
             'role' => ['nullable', 'string', 'exists:roles,name'],
             'password' => ['nullable', 'string', 'min:8'],
         ]);
@@ -256,7 +257,7 @@ class StaffController extends AdminController
             'employee_code', 'first_name', 'last_name', 'email', 'phone', 'position',
             'department_id', 'designation_id', 'branch_id', 'team_id', 'manager_id',
             'joining_date', 'employment_status',
-        ])->all();
+        ])->all() + ['web_login_enabled' => (bool) ($data['web_login_enabled'] ?? false)];
     }
 
     /** Start a new shift assignment from today when the shift changes. */

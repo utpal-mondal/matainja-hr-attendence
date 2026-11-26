@@ -40,7 +40,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         // Organisation logo from Settings for the admin sidebar and sign-in page.
-        View::composer(['admin.layout', 'admin.login'], function ($view) {
+        View::composer(['admin.layout', 'portal.layout', 'auth.login'], function ($view) {
             $logoPath = CompanySetting::where('key', InvoiceService::SETTING_LOGO)->value('value');
 
             $view->with('brandLogoUrl', $logoPath && Storage::disk('local')->exists($logoPath)
