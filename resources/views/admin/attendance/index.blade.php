@@ -3,8 +3,10 @@
 
 @section('content')
     @php
-        $badge = ['in' => 'ok', 'late' => 'warn', 'wfh' => 'wfh', 'leave' => 'info', 'absent' => ''];
-        $isToday = $date->isSameDay($today);
+        $badge = ['in' => 'ok', 'late' => 'warn', 'wfh' => 'wfh', 'leave' => 'info', 'absent' => '', 'holiday' => 'brand', 'off' => ''];
+        // Over a range, $date is the last day of the period and $from the first.
+        $isToday = ! $ranged && $date->isSameDay($today);
+        $keepPeriod = request()->only(['period', 'date', 'from', 'to']);
         // Work from home can be added from today onwards, and isn't needed on a WFH weekday.
         $canAddWfh = $isToday && ! $isWfhDay;
         $q = request()->except('page');
@@ -23,22 +25,29 @@
     <div class="page-head">
         <div>
             <h1>Attendance</h1>
-            <p>{{ $date->format('l, d F Y') }}{{ $isToday ? ' · today' : '' }} · {{ $total }} employee{{ $total === 1 ? '' : 's' }} expected</p>
+            @if ($ranged)
+                <p>{{ $periods[$period] }} · {{ $from->format('d M Y') }} – {{ $date->format('d M Y') }} · {{ $days }} day{{ $days === 1 ? '' : 's' }}
+                    · {{ $employeeCount }} employee{{ $employeeCount === 1 ? '' : 's' }} · {{ $total }} working day{{ $total === 1 ? '' : 's' }} expected</p>
+            @else
+                <p>{{ $date->format('l, d F Y') }}{{ $isToday ? ' · today' : '' }} · {{ $total }} employee{{ $total === 1 ? '' : 's' }} expected</p>
+            @endif
         </div>
         <div class="actions">
-            <a class="btn" href="{{ route('admin.attendance.index', array_merge($q, ['date' => $date->subDay()->toDateString()])) }}">‹ Prev day</a>
-            @unless ($isToday)<a class="btn" href="{{ route('admin.attendance.index', array_merge($q, ['date' => null])) }}">Today</a>@endunless
-            @if ($date->lt($today))<a class="btn" href="{{ route('admin.attendance.index', array_merge($q, ['date' => $date->addDay()->toDateString()])) }}">Next day ›</a>@endif
-            <a class="btn primary" href="{{ route('admin.attendance.export', array_merge($q, ['date' => $date->toDateString()])) }}">Export CSV</a>
+            @unless ($ranged)
+                <a class="btn" href="{{ route('admin.attendance.index', array_merge($q, ['date' => $date->subDay()->toDateString()])) }}">‹ Prev day</a>
+                @unless ($isToday)<a class="btn" href="{{ route('admin.attendance.index', array_merge($q, ['date' => null])) }}">Today</a>@endunless
+                @if ($date->lt($today))<a class="btn" href="{{ route('admin.attendance.index', array_merge($q, ['date' => $date->addDay()->toDateString()])) }}">Next day ›</a>@endif
+            @endunless
+            <a class="btn primary" href="{{ route('admin.attendance.export', $ranged ? $q : array_merge($q, ['date' => $date->toDateString()])) }}">Export CSV</a>
         </div>
     </div>
 
-    @if ($holiday)
+    @if (! $ranged && $holiday)
         <div class="alert info"><strong>Holiday:</strong>&nbsp;{{ $holiday->name }}</div>
-    @elseif ($date->isWeekend())
+    @elseif (! $ranged && $date->isWeekend())
         <div class="alert info">Weekend: attendance is optional.</div>
     @endif
-    @if ($isWfhDay)
+    @if (! $ranged && $isWfhDay)
         <div class="alert wfh"><strong>Work-from-home day.</strong>&nbsp;Everyone can check in from anywhere; the office geofence is skipped and the punch location is still recorded.</div>
     @endif
 
@@ -55,8 +64,16 @@
 
     <div class="card">
         <div class="card-head">
-            <form method="GET" class="toolbar" style="flex:1">
-                <input type="date" name="date" value="{{ $date->toDateString() }}" max="{{ $today->toDateString() }}" onchange="this.form.submit()">
+            <form method="GET" class="toolbar" style="flex:1" id="attendance-filters">
+                <select name="period" id="period" aria-label="Period">
+                    @foreach ($periods as $value => $label)<option value="{{ $value }}" @selected($period === $value)>{{ $label }}</option>@endforeach
+                </select>
+                <input type="date" name="date" value="{{ $date->toDateString() }}" max="{{ $today->toDateString() }}" onchange="this.form.submit()"
+                       data-period-input="day" aria-label="Day" @if ($period !== 'day') hidden disabled @endif>
+                <input type="date" name="from" value="{{ $from->toDateString() }}" max="{{ $today->toDateString() }}"
+                       data-period-input="custom" aria-label="From" title="From" @if ($period !== 'custom') hidden disabled @endif>
+                <input type="date" name="to" value="{{ $date->toDateString() }}" max="{{ $today->toDateString() }}"
+                       data-period-input="custom" aria-label="To" title="To" @if ($period !== 'custom') hidden disabled @endif>
                 <input type="search" name="q" value="{{ request('q') }}" placeholder="Search employee or code">
                 <select name="branch" onchange="this.form.submit()">
                     <option value="">All branches</option>
@@ -68,13 +85,13 @@
                 </select>
                 @if (request('status'))<input type="hidden" name="status" value="{{ request('status') }}">@endif
                 <button class="btn" type="submit">Apply</button>
-                @if (request()->hasAny(['q', 'branch', 'department', 'status']))<a class="btn ghost" href="{{ route('admin.attendance.index', ['date' => $date->toDateString()]) }}">Clear</a>@endif
+                @if (request()->hasAny(['q', 'branch', 'department', 'status']))<a class="btn ghost" href="{{ route('admin.attendance.index', $ranged ? $keepPeriod : ['date' => $date->toDateString()]) }}">Clear</a>@endif
             </form>
         </div>
         <div class="table-wrap">
             <table>
                 <thead>
-                <tr><th>Employee</th><th>Shift</th><th>Check-in</th><th>Check-out</th><th>Worked</th><th>Check-in place</th><th>Check-out place</th><th>Status</th><th class="right">Actions</th></tr>
+                <tr>@if ($ranged)<th>Date</th>@endif<th>Employee</th><th>Shift</th><th>Check-in</th><th>Check-out</th><th>Worked</th><th>Check-in place</th><th>Check-out place</th><th>Status</th><th class="right">Actions</th></tr>
                 </thead>
                 <tbody>
                 @forelse ($rows as $r)
@@ -84,12 +101,16 @@
                         $wfh = $r['bucket'] === 'wfh';
                         $in = $place($r['in_location'], $wfh);
                         $out = $place($r['out_location'], $wfh);
+                        $rowIsToday = $r['date']->isSameDay($today);
                         $worked = $a?->worked_minutes;
-                        if ($a && $a->check_in_at && ! $a->check_out_at && $isToday) {
+                        if ($a && $a->check_in_at && ! $a->check_out_at && $rowIsToday) {
                             $worked = (int) $a->check_in_at->diffInMinutes(now());
                         }
                     @endphp
                     <tr>
+                        @if ($ranged)
+                            <td class="nowrap"><strong>{{ $r['date']->format('d M Y') }}</strong><span class="sub">{{ $r['date']->format('l') }}</span></td>
+                        @endif
                         <td>
                             <div class="person">
                                 <span class="avatar">{{ strtoupper(mb_substr($s->first_name ?: $s->full_name, 0, 1).mb_substr($s->last_name ?? '', 0, 1)) }}</span>
@@ -109,7 +130,7 @@
                                 <strong>{{ $fmtTime($a->check_out_at) }}</strong>
                                 @if ($a->overtime_minutes > 0)<span class="sub">+{{ $a->overtime_minutes }} min overtime</span>@endif
                             @elseif ($a?->check_in_at)
-                                <span class="badge {{ $isToday ? 'ok' : 'warn' }}">{{ $isToday ? 'Working' : 'Missed check-out' }}</span>
+                                <span class="badge {{ $rowIsToday ? 'ok' : 'warn' }}">{{ $rowIsToday ? 'Working' : 'Missed check-out' }}</span>
                             @else — @endif
                         </td>
                         <td class="nowrap" style="min-width:110px">
@@ -140,9 +161,10 @@
                             @endphp
                             <button type="button" class="btn sm" data-open-dialog="mark-dialog"
                                     data-mark-action="{{ route('admin.attendance.mark', $s) }}" data-mark-staff-id="{{ $s->id }}" data-mark-name="{{ $s->full_name }}"
+                                    data-mark-date="{{ $r['date']->toDateString() }}" data-mark-date-label="{{ $r['date']->format('l, d M Y') }}"
                                     data-mark-current="{{ $currentMark }}" data-mark-in="{{ $a?->check_in_at?->copy()->setTimezone($tz)->format('H:i') }}"
                                     data-mark-out="{{ $a?->check_out_at?->copy()->setTimezone($tz)->format('H:i') }}">{{ $a ? 'Edit' : 'Mark' }}</button>
-                            @unless ($r['on_leave'])
+                            @unless ($r['on_leave'] || $ranged)
                                 <button type="button" class="btn sm" data-open-dialog="leave-dialog"
                                         data-leave-action="{{ route('admin.staff.leave.store', $s) }}" data-leave-staff-id="{{ $s->id }}" data-leave-name="{{ $s->full_name }}">+ Leave</button>
                             @endunless
@@ -157,11 +179,14 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="9" class="empty">No employees match these filters.</td></tr>
+                    <tr><td colspan="{{ $ranged ? 10 : 9 }}" class="empty">No {{ $ranged ? 'days' : 'employees' }} match these filters.</td></tr>
                 @endforelse
                 </tbody>
             </table>
         </div>
+        @if ($ranged)
+            {{ $rows->links('admin.partials.pagination') }}
+        @endif
     </div>
 
     @if ($canAddWfh)
@@ -212,11 +237,11 @@
     <dialog id="mark-dialog" aria-labelledby="mark-title" @if ($markRetryId) data-open-on-load @endif>
         <form method="POST" action="{{ $markRetryId ? route('admin.attendance.mark', $markRetryId) : '' }}" class="card-body" id="mark-form">
             @csrf
-            <input type="hidden" name="date" value="{{ $date->toDateString() }}">
+            <input type="hidden" name="date" id="mark-date" value="{{ $markRetryId ? old('date') : $date->toDateString() }}">
             <input type="hidden" name="mark_staff_id" id="mark-staff-id" value="{{ $markRetryId }}">
             <input type="hidden" name="mark_staff_name" id="mark-staff-name" value="{{ $markRetryId ? old('mark_staff_name') : '' }}">
             <h2 id="mark-title">Mark attendance</h2>
-            <p class="muted" style="margin:4px 0 14px"><strong id="mark-name">{{ $markRetryId ? old('mark_staff_name') : '' }}</strong> · {{ $date->format('l, d M Y') }}</p>
+            <p class="muted" style="margin:4px 0 14px"><strong id="mark-name">{{ $markRetryId ? old('mark_staff_name') : '' }}</strong> · <span id="mark-date-label">{{ \Carbon\CarbonImmutable::parse($markRetryId && old('date') ? old('date') : $date)->format('l, d M Y') }}</span></p>
             @if ($errors->mark->has('date'))<div class="error">{{ $errors->mark->first('date') }}</div>@endif
             <div class="field">
                 <label>Mark as *</label>
@@ -253,6 +278,20 @@
 
 @push('scripts')
 <script>
+    // Period filter: show the day picker or the from/to pickers; presets apply straight away.
+    (function () {
+        var form = document.getElementById('attendance-filters');
+        var period = document.getElementById('period');
+        period.addEventListener('change', function () {
+            form.querySelectorAll('[data-period-input]').forEach(function (input) {
+                var show = input.getAttribute('data-period-input') === period.value;
+                input.hidden = !show;
+                input.disabled = !show;
+            });
+            if (period.value !== 'custom') { form.submit(); }
+        });
+    })();
+
     // Point the shared "Mark attendance" pop-up at the clicked employee and fill in their current day.
     (function () {
         var form = document.getElementById('mark-form');
@@ -271,6 +310,8 @@
             document.getElementById('mark-staff-id').value = btn.getAttribute('data-mark-staff-id');
             document.getElementById('mark-staff-name').value = btn.getAttribute('data-mark-name');
             document.getElementById('mark-name').textContent = btn.getAttribute('data-mark-name');
+            document.getElementById('mark-date').value = btn.getAttribute('data-mark-date');
+            document.getElementById('mark-date-label').textContent = btn.getAttribute('data-mark-date-label');
             var current = btn.getAttribute('data-mark-current') || 'present';
             form.querySelector('input[name=mark][value=' + current + ']').checked = true;
             document.getElementById('mark_in').value = btn.getAttribute('data-mark-in') || '';

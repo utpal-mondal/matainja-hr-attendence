@@ -35,7 +35,7 @@ class AdminPanelTest extends TestCase
     public function test_sidebar_and_sign_in_show_the_organisation_logo_once_uploaded(): void
     {
         Storage::fake('local');
-        $this->get(route('admin.login'))->assertSee('M17 11V3H7v4H3v14h8v-4h2v4h8V11h-4z', false)->assertDontSee('has-logo');
+        $this->get(route('login'))->assertSee('M17 11V3H7v4H3v14h8v-4h2v4h8V11h-4z', false)->assertDontSee('has-logo');
         $this->get(route('admin.logo'))->assertNotFound();
 
         $this->actingAs($this->superAdmin());
@@ -47,7 +47,7 @@ class AdminPanelTest extends TestCase
         $this->get(route('admin.logo'))->assertOk()->assertHeader('content-type', 'image/png');
 
         auth()->logout();
-        $this->get(route('admin.login'))->assertSee($logoUrl, false);
+        $this->get(route('login'))->assertSee($logoUrl, false);
         $this->get(route('admin.logo'))->assertOk(); // public, like the invoices it's printed on
     }
 
@@ -75,8 +75,10 @@ class AdminPanelTest extends TestCase
 
     public function test_guests_are_sent_to_the_login_page(): void
     {
-        $this->get('/admin')->assertRedirect(route('admin.login'));
-        $this->get('/admin/login')->assertOk()->assertSee('Super Admin console');
+        $this->get('/admin')->assertRedirect(route('login'));
+        $this->get('/login')->assertOk()->assertSee('Sign in');
+        $this->get('/')->assertRedirect(route('login'));
+        $this->get('/admin/login')->assertRedirect('/login'); // old bookmark
     }
 
     public function test_api_guests_still_get_json_401(): void
@@ -89,25 +91,41 @@ class AdminPanelTest extends TestCase
     {
         $this->superAdmin();
 
-        $this->post('/admin/login', ['email' => 'boss@example.com', 'password' => 'secret123'])
+        $this->post('/login', ['email' => 'boss@example.com', 'password' => 'secret123'])
             ->assertRedirect(route('admin.dashboard'));
         $this->get('/admin')->assertOk()->assertSee('Dashboard');
 
-        $this->post('/admin/logout')->assertRedirect(route('admin.login'));
+        $this->post('/admin/logout')->assertRedirect(route('login'));
         $this->assertGuest();
     }
 
-    public function test_other_roles_cannot_sign_in(): void
+    public function test_other_roles_sign_in_to_the_employee_portal_not_the_admin_panel(): void
     {
-        $staff = $this->employee('HR Admin');
+        $staff = $this->employee('HR Admin', ['web_login_enabled' => true]);
         $staff->user->update(['password' => 'secret123']);
 
-        $this->post('/admin/login', ['email' => $staff->user->email, 'password' => 'secret123'])
-            ->assertSessionHasErrors('email');
-        $this->assertGuest();
+        $this->post('/login', ['email' => $staff->user->email, 'password' => 'secret123'])
+            ->assertRedirect(route('portal.dashboard'));
+        $this->get('/admin')->assertRedirect(route('portal.dashboard'));
+        $this->assertAuthenticatedAs($staff->user);
 
-        // Even with a session, a non-super-admin is pushed out.
-        $this->actingAs($staff->user)->get('/admin')->assertRedirect(route('admin.login'));
+        // Without an employee profile there is nowhere to go: signed out.
+        $hrOnly = User::factory()->create(['password' => 'secret123']);
+        $hrOnly->assignRole('HR Admin');
+        auth()->logout();
+        $this->post('/login', ['email' => $hrOnly->email, 'password' => 'secret123'])->assertSessionHasErrors('email');
+        $this->assertGuest();
+        $this->actingAs($hrOnly)->get('/admin')->assertRedirect(route('login'));
+        $this->assertGuest();
+    }
+
+    public function test_super_admin_is_taken_back_to_the_admin_page_they_asked_for(): void
+    {
+        $this->superAdmin();
+
+        $this->get('/admin/payroll')->assertRedirect(route('login'));
+        $this->post('/login', ['email' => 'boss@example.com', 'password' => 'secret123'])
+            ->assertRedirect(url('/admin/payroll'));
     }
 
     public function test_every_page_renders(): void

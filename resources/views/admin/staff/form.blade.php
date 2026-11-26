@@ -128,8 +128,11 @@
 
             <div class="stack">
                 <div class="card">
-                    <div class="card-head"><h2>Mobile app access</h2>
-                        @if ($hasLogin)<span class="badge ok">Login active</span>@else<span class="badge">No login</span>@endif
+                    <div class="card-head"><h2>App & web access</h2>
+                        <span class="actions">
+                            @if ($hasLogin)<span class="badge ok">Login active</span>@else<span class="badge">No login</span>@endif
+                            @if ($staff->web_login_enabled)<span class="badge info">Web login on</span>@endif
+                        </span>
                     </div>
                     <div class="card-body">
                         @if (! $hasLogin)
@@ -153,6 +156,11 @@
                             <label for="password">{{ $hasLogin ? 'Set a new password' : 'Password' }}</label>
                             <input id="password" type="text" name="password" autocomplete="new-password" minlength="8" placeholder="{{ $hasLogin ? 'Leave empty to keep the current one' : 'Leave empty to generate one' }}">
                             <div class="hint">At least 8 characters. Share it with the employee; they can sign in to the app right away.</div>
+                        </div>
+                        <div class="field">
+                            <input type="hidden" name="web_login_enabled" value="0">
+                            <label class="check"><input type="checkbox" name="web_login_enabled" value="1" @checked(old('web_login_enabled', $staff->web_login_enabled))> Allow web login (employee portal)</label>
+                            <div class="hint">When on, the employee can also sign in at {{ route('login') }} with the same email and password to see their attendance, leave and payslips. When off, they get "You don't have web permission". The mobile app works either way.</div>
                         </div>
                         @if ($hasLogin && $staff->initial_password)
                             <details>

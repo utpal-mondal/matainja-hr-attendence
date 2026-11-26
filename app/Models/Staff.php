@@ -14,7 +14,7 @@ class Staff extends Model
     protected $table = 'staff';
 
     protected $fillable = [
-        'user_id', 'initial_password', 'employee_code', 'first_name', 'last_name', 'name', 'email',
+        'user_id', 'web_login_enabled', 'initial_password', 'employee_code', 'first_name', 'last_name', 'name', 'email',
         'phone', 'position', 'department_id', 'designation_id', 'branch_id',
         'team_id', 'manager_id', 'joining_date', 'employment_status',
     ];
@@ -35,6 +35,7 @@ class Staff extends Model
         return [
             'joining_date' => 'date',
             'initial_password' => 'encrypted',
+            'web_login_enabled' => 'boolean',
         ];
     }
 
