@@ -8,8 +8,6 @@ use App\Http\Resources\AnnouncementResource;
 use App\Models\Announcement;
 use App\Models\AnnouncementRead;
 use App\Models\AuditLog;
-use App\Models\InAppNotification;
-use App\Models\User;
 use App\Support\ApiResponder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -54,10 +52,6 @@ class AnnouncementController extends Controller
                 'created_by' => $request->user()->id,
             ]);
 
-            if ($announcement->published_at) {
-                $this->notifyAll($announcement);
-            }
-
             return $announcement;
         });
 
@@ -97,8 +91,7 @@ class AnnouncementController extends Controller
         }
 
         DB::transaction(function () use ($announcement) {
-            $announcement->update(['published_at' => now()]);
-            $this->notifyAll($announcement);
+            $announcement->update(['published_at' => now()]); // notifies everyone (NotificationEvents)
         });
 
         AuditLog::record('announcement.published', $announcement);
@@ -123,16 +116,5 @@ class AnnouncementController extends Controller
         );
 
         return ApiResponder::success(null, 'Marked as read');
-    }
-
-    private function notifyAll(Announcement $announcement): void
-    {
-        User::whereHas('staff')->each(fn (User $user) => InAppNotification::create([
-            'user_id' => $user->id,
-            'type' => 'announcement',
-            'title' => $announcement->title,
-            'body' => $announcement->body,
-            'data' => ['announcement_id' => $announcement->id],
-        ]));
     }
 }

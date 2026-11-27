@@ -7,6 +7,7 @@ use App\Models\CompanySetting;
 use App\Models\LeaveRequest;
 use App\Models\WfhRequest;
 use App\Services\InvoiceService;
+use App\Services\NotificationEvents;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -31,6 +32,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // In-app + phone push notifications for leave, WFH, holidays, shifts...
+        NotificationEvents::register();
+
         // Pending-approvals badge in the admin panel sidebar.
         View::composer('admin.layout', function ($view) {
             $view->with('pendingApprovals',

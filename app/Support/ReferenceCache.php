@@ -33,6 +33,11 @@ class ReferenceCache
      */
     public static function flush(string $name): void
     {
+        // The database cache driver's increment() does nothing when the key
+        // is missing, which left the version at 0 so edits (a new holiday
+        // from the admin panel) were not seen for up to 15 minutes. Create
+        // the counter first; add() is a no-op when it already exists.
+        Cache::add("refver:$name", 0);
         Cache::increment("refver:$name");
     }
 }

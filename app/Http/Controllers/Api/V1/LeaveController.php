@@ -225,7 +225,12 @@ class LeaveController extends Controller
             ->whereNull('decision')
             ->first();
 
-        if (! $approval && ! $request->user()->isAdmin()) {
+        // The request was routed when it was submitted; the employee's
+        // current manager can still decide it (their queue shows it).
+        $isCurrentManager = $request->user()->staff
+            && $leaveRequest->staff?->manager_id === $request->user()->staff->id;
+
+        if (! $approval && ! $request->user()->isAdmin() && ! $isCurrentManager) {
             return ApiResponder::error('You are not an approver for this request.', 403);
         }
 

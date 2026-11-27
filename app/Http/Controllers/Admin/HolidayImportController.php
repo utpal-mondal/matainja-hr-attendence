@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\AuditLog;
 use App\Services\HolidayImportService;
+use App\Services\NotificationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -19,9 +20,15 @@ class HolidayImportController extends AdminController
             'file' => ['required', 'file', 'mimes:csv,txt', 'max:1024'],
         ], ['file.mimes' => 'Upload a .csv file (in Excel: File → Save As → CSV).']);
 
-        $result = $importer->import($request->file('file')->getRealPath());
+        // One summary notification instead of one per imported row.
+        $result = NotificationService::muted(fn () => $importer->import($request->file('file')->getRealPath()));
         if ($result['error']) {
             return back()->with('error', $result['error']);
+        }
+        if ($result['created'] > 0) {
+            $notifications = app(NotificationService::class);
+            $notifications->notify($notifications->everyone(), 'holiday', 'Holiday list updated',
+                $result['created'] === 1 ? '1 new holiday was added to the calendar.' : "{$result['created']} new holidays were added to the calendar.");
         }
 
         AuditLog::record('holidays.imported', null, null, [
