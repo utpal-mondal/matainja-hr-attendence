@@ -1,22 +1,17 @@
 #!/bin/sh
-# Bump the number returned by /github-pull-number in routes/web.php on every commit.
-FILE="routes/web.php"
-PATTERN="/github-pull-number"
+# Bump the pull number in config/github.php on every commit.
+FILE="config/github.php"
 
 # Skip if nothing is staged.
 git diff --cached --quiet && exit 0
 
 # Read the current number from the staged version of the file.
-CURRENT=$(git show ":$FILE" 2>/dev/null | grep -A1 "$PATTERN" | grep -o 'return [0-9]\+' | grep -o '[0-9]\+')
+CURRENT=$(git show ":$FILE" 2>/dev/null | grep -o "'pull_number' => [0-9]\+" | grep -o '[0-9]\+$')
 [ -z "$CURRENT" ] && exit 0
 NEXT=$((CURRENT + 1))
 
 bump() {
-    awk -v next_num="$NEXT" -v pat="$PATTERN" '
-        index($0, pat) { found = 1 }
-        found && /return [0-9]+;/ { sub(/return [0-9]+;/, "return " next_num ";"); found = 0 }
-        { print }
-    '
+    sed "s/'pull_number' => [0-9]\+/'pull_number' => $NEXT/"
 }
 
 # Update the staged copy only, so unrelated unstaged edits in the file stay unstaged.
@@ -29,4 +24,4 @@ if [ -f "$FILE" ]; then
     bump < "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
 fi
 
-echo "pre-commit: github-pull-number $CURRENT -> $NEXT"
+echo "pre-commit: pull number $CURRENT -> $NEXT"

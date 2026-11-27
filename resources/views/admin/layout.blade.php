@@ -84,13 +84,12 @@
             @endif
         </nav>
         <div class="sidebar-foot">
-            <div class="who">{{ auth()->user()->name }}</div>
+            <div class="who">{{ auth()->user()->name }} <span style="font-size: 11px; font-weight: normal; opacity: .6;">#{{ config('github.pull_number') }}</span></div>
             <div>{{ auth()->user()->email }}</div>
             <form method="POST" action="{{ route('admin.logout') }}">
                 @csrf
                 <button class="btn sm" type="submit">Sign out</button>
-            </form>
-        </div>
+            </form>        </div>
     </aside>
     <div class="scrim" onclick="document.body.classList.remove('nav-open')"></div>
 
