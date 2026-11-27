@@ -34,6 +34,7 @@ class SettingController extends AdminController
                 'lop_basis' => $this->payroll->lopBasis(),
                 'pt_state' => $this->payroll->ptState(),
                 'overtime_multiplier' => $this->payroll->overtimeMultiplier(),
+                'esi_employer_rate' => $this->payroll->esiEmployerRate(),
             ],
         ]);
     }
@@ -59,6 +60,7 @@ class SettingController extends AdminController
             'lop_basis' => ['nullable', Rule::in(array_keys(PayrollService::LOP_BASES))],
             'pt_state' => ['nullable', Rule::in([...array_keys(config('payroll.professional_tax.states')), 'none'])],
             'overtime_multiplier' => ['nullable', 'numeric', 'min:0', 'max:5'],
+            'esi_employer_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'custom' => ['nullable', 'array'],
             'custom.*' => ['nullable', 'string', 'max:2000'],
             'new_key' => ['nullable', 'string', 'max:100', 'regex:/^[a-z0-9_.]+$/'],
@@ -93,6 +95,9 @@ class SettingController extends AdminController
             $this->put(PayrollService::SETTING_LOP_BASIS, $data['lop_basis'], 'string');
             $this->put(PayrollService::SETTING_PT_STATE, $data['pt_state'] ?? 'none', 'string');
             $this->put(PayrollService::SETTING_OVERTIME_MULTIPLIER, (string) (float) ($data['overtime_multiplier'] ?? 0), 'string');
+            if ($request->has('esi_employer_rate')) {
+                $this->put(PayrollService::SETTING_ESI_EMPLOYER_RATE, (string) (float) ($data['esi_employer_rate'] ?? 0), 'string');
+            }
         }
 
         $this->saveLogo($request);
@@ -160,6 +165,7 @@ class SettingController extends AdminController
             PayrollService::SETTING_LOP_BASIS => 'Loss-of-pay daily rate',
             PayrollService::SETTING_PT_STATE => 'Professional Tax state',
             PayrollService::SETTING_OVERTIME_MULTIPLIER => 'Overtime pay rate',
+            PayrollService::SETTING_ESI_EMPLOYER_RATE => 'Employer ESI rate',
         ] + self::invoicingKeys();
     }
 

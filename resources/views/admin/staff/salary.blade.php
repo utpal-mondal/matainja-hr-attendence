@@ -12,7 +12,7 @@
         <div>
             <a class="small" href="{{ route('admin.staff.edit', $staff) }}">← {{ $staff->full_name }}</a>
             <h1 style="margin-top:4px">Salary</h1>
-            <p>Salary revisions plus the statutory and bank details payroll needs. PF and ESI come from the salary components; they, Professional Tax and TDS are worked out each month in the payroll run.</p>
+            <p>Salary revisions plus the statutory and bank details payroll needs. PF and ESI are the amounts set on the salary (cut for LOP days); Professional Tax and TDS are worked out each month in the payroll run.</p>
         </div>
         <div class="actions">
             <a class="btn" href="{{ route('admin.org.index', 'salary-components') }}">Salary components</a>
@@ -98,7 +98,7 @@
                         </div>
                         @error('amounts')<div class="error">{{ $message }}</div>@enderror
                         @error('amounts.*')<div class="error">{{ $message }}</div>@enderror
-                        <p class="hint">Gross is the total of the earnings. You can change any amount before saving; components left at 0 are skipped. PF and ESI are always worked out by their formula (and again each payroll month from what was earned): leave them above 0 to deduct them, or set 0 to stop them.</p>
+                        <p class="hint">Gross is the total of the earnings. You can change any amount before saving; components left at 0 are skipped. PF and ESI are deducted as entered here (less any LOP days); set them to 0 for anyone who doesn't pay them, e.g. ESI when gross is above ₹21,000.</p>
                         <div class="actions" style="justify-content:flex-end">
                             <button class="btn primary" type="submit">Save salary revision</button>
                         </div>
@@ -186,13 +186,13 @@
                     </div>
                     <div class="field wide">
                         @foreach ([
-                            'pf_on_full_basic' => 'PF on full Basic (otherwise capped at the ₹15,000 PF wage ceiling)',
+                            'pf_on_full_basic' => 'PF on full Basic: report full Basic as PF wages in the ECR file (otherwise capped at ₹15,000)',
                             'pt_applicable' => 'Deduct Professional Tax',
                         ] as $flag => $label)
                             <input type="hidden" name="{{ $flag }}" value="0">
                             <label class="check"><input type="checkbox" name="{{ $flag }}" value="1" @checked($p($flag))> {{ $label }}</label>
                         @endforeach
-                        <div class="hint">PF and ESI are deducted when the salary includes the PF / ESI components. Set them to 0 in a salary revision to stop them.</div>
+                        <div class="hint">PF and ESI amounts are set in the salary revision (PF / ESI components). Set them to 0 there to stop them.</div>
                     </div>
                 </div>
             </div>

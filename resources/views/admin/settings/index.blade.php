@@ -75,7 +75,13 @@
                             <input id="overtime_multiplier" type="number" name="overtime_multiplier" min="0" max="5" step="0.25" value="{{ old('overtime_multiplier', $payroll['overtime_multiplier']) }}">
                             <div class="hint">× the hourly rate (gross ÷ days ÷ {{ config('payroll.overtime_hours_per_day') }} h). 0 = overtime is not paid; 2 = double rate.</div>
                         </div>
-                        <div class="hint wide">PF, ESI, PT and income-tax rates are kept in config/payroll.php; update them when the rules change.</div>
+                        <div class="field">
+                            <label for="esi_employer_rate">Employer ESI rate (%)</label>
+                            <input id="esi_employer_rate" type="number" name="esi_employer_rate" min="0" max="100" step="0.01" value="{{ old('esi_employer_rate', \App\Models\Tax::formatRate($payroll['esi_employer_rate'])) }}">
+                            @error('esi_employer_rate')<div class="error">{{ $message }}</div>@enderror
+                            <div class="hint">% of the month's earnings and overtime, paid by the company for everyone who has ESI deducted. 0 = none. Not taken from pay.</div>
+                        </div>
+                        <div class="hint wide">Employee PF and ESI are set as salary components (Organisation → Salary components). PT, pension (EPS) and income-tax rates are kept in config/payroll.php; update them when the rules change.</div>
                     </div>
                 </div>
             </div>

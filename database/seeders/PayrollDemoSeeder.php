@@ -68,8 +68,14 @@ class PayrollDemoSeeder extends Seeder
             }
             $employee->payrollProfile()->firstOrCreate([], $setup['profile'] + ['bank_account_name' => $employee->full_name]);
             if (! $employee->salaryStructures()->exists()) {
+                $amounts = $salaries->split($setup['gross'], $components);
+                // ESI is only paid on salaries up to ₹21,000.
+                $esi = $components->firstWhere('code', SalaryComponent::ESI_CODE);
+                if ($esi && $setup['gross'] > 21000) {
+                    $amounts[$esi->id] = 0;
+                }
                 $salaries->createRevision($employee, $employee->joining_date?->toDateString() ?? $earlier->toDateString(),
-                    $components, $salaries->split($setup['gross'], $components), 'Demo salary');
+                    $components, $amounts, 'Demo salary');
             }
             foreach ([$earlier, $latest] as $month) {
                 $this->attendance($employee, $month, $payroll->weeklyOffDays(), withLeave: $month->eq($latest));

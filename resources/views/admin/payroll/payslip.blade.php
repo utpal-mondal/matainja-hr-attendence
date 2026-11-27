@@ -100,17 +100,17 @@
                         <label for="employee_pf_override">Provident Fund (₹)</label>
                         <input id="employee_pf_override" type="number" name="employee_pf_override" step="0.01" min="0"
                                value="{{ old('employee_pf_override', $payslip->employee_pf_override) }}"
-                               placeholder="{{ $payslip->employee_pf_override === null ? number_format((float) $payslip->employee_pf, 2, '.', '').' calculated' : 'Calculated' }}" @disabled(! $draft)>
+                               placeholder="{{ $payslip->employee_pf_override === null ? number_format((float) $payslip->employee_pf, 2, '.', '').' from salary' : 'From salary' }}" @disabled(! $draft)>
                         @error('employee_pf_override')<div class="error">{{ $message }}</div>@enderror
                     </div>
                     <div class="field">
                         <label for="employee_esi_override">ESI (₹)</label>
                         <input id="employee_esi_override" type="number" name="employee_esi_override" step="0.01" min="0"
                                value="{{ old('employee_esi_override', $payslip->employee_esi_override) }}"
-                               placeholder="{{ $payslip->employee_esi_override === null ? number_format((float) $payslip->employee_esi, 2, '.', '').' calculated' : 'Calculated' }}" @disabled(! $draft)>
+                               placeholder="{{ $payslip->employee_esi_override === null ? number_format((float) $payslip->employee_esi, 2, '.', '').' from salary' : 'From salary' }}" @disabled(! $draft)>
                         @error('employee_esi_override')<div class="error">{{ $message }}</div>@enderror
                     </div>
-                    <div class="hint wide">Enter an amount to deduct instead of the calculated one (0 for none), or leave empty to use the calculation. Employer contributions and PF wages stay as calculated. An overridden PF also counts for TDS and the PF ECR file.</div>
+                    <div class="hint wide">Enter an amount to deduct this month instead of the one from the salary (0 for none), or leave empty to use the salary. Employer PF and PF wages stay as on the salary. An overridden PF also counts for TDS and the PF ECR file.</div>
                     @if ($draft)
                         <div class="actions wide" style="justify-content:flex-end"><button class="btn" type="submit">Update PF &amp; ESI</button></div>
                     @endif

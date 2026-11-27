@@ -57,7 +57,11 @@ class PayrollRunTest extends TestCase
         $staff = Staff::create(['employee_code' => $code, 'first_name' => $name, 'employment_status' => 'active', 'joining_date' => '2025-01-01']);
         $components = SalaryComponent::ordered()->get();
         $service = app(SalaryStructureService::class);
-        $service->createRevision($staff, '2026-04-01', $components, $service->split($gross, $components));
+        $amounts = $service->split($gross, $components);
+        if ($gross > 21000) {
+            $amounts[$components->firstWhere('code', 'ESI')->id] = 0; // no ESI above ₹21,000, as an admin would set it
+        }
+        $service->createRevision($staff, '2026-04-01', $components, $amounts);
 
         return $staff;
     }
@@ -153,7 +157,7 @@ class PayrollRunTest extends TestCase
         $this->assertSame('2500.00', $payslip->employee_pf);
         $this->assertSame('100.00', $payslip->employee_esi);
         $this->assertSame('1800.00', $payslip->employer_pf);
-        $this->assertSame('0.00', $payslip->employer_esi);
+        $this->assertSame('975.00', $payslip->employer_esi);
         $this->assertSame('27250.00', $payslip->net_pay);
         $this->assertSame(2500.0, (float) $payslip->items()->where('code', 'PF')->value('amount'));
 
@@ -265,10 +269,31 @@ class PayrollRunTest extends TestCase
         $this->assertSame('fixed_30', $service->lopBasis());
         $this->assertNull($service->ptState());
         $this->assertSame(1.5, $service->overtimeMultiplier());
+        $this->assertSame(3.25, $service->esiEmployerRate());  // not sent: the config rate stays
 
         $this->put(route('admin.settings.update'), ['lop_basis' => 'calendar', 'pt_state' => 'WB']);
         $this->assertSame([], $service->weeklyOffDays());
         $this->assertSame('', CompanySetting::where('key', PayrollService::SETTING_WEEKLY_OFF_DAYS)->value('value'));
+    }
+
+    public function test_employer_esi_rate_is_saved_and_charged_on_payroll(): void
+    {
+        $service = app(PayrollService::class);
+
+        $this->put(route('admin.settings.update'), ['lop_basis' => 'calendar', 'pt_state' => 'WB', 'esi_employer_rate' => -1])
+            ->assertSessionHasErrors('esi_employer_rate');
+        $this->put(route('admin.settings.update'), ['weekly_off_days' => [7], 'lop_basis' => 'calendar', 'pt_state' => 'WB', 'esi_employer_rate' => 4])
+            ->assertSessionHas('success');
+        $this->assertSame(4.0, $service->esiEmployerRate());
+
+        // ₹20,000 a month pays ESI (0.75% = ₹150); the employer adds 4% of the ₹20,000 earned.
+        $small = $this->employeeWithSalary('EMP-307', 'Small', 20000);
+        $this->presentAllMonth($small, 2026, 10);
+        $payslips = $this->runOctober()->payslips()->get()->keyBy('staff_id');
+
+        $this->assertSame('150.00', $payslips[$small->id]->employee_esi);
+        $this->assertSame('800.00', $payslips[$small->id]->employer_esi);
+        $this->assertSame('0.00', $payslips[$this->asha->id]->employer_esi);  // no ESI above ₹21,000
     }
 
     public function test_fixed_30_basis_divides_by_30(): void

@@ -44,7 +44,10 @@ class PfEcrTest extends TestCase
         $staff->payrollProfile()->create($profile);
         $components = SalaryComponent::ordered()->get();
         $service = app(SalaryStructureService::class);
-        $amounts = $service->split($gross, $components, (bool) ($profile['pf_on_full_basic'] ?? false));
+        $amounts = $service->split($gross, $components);
+        if ($gross > 21000) {
+            $amounts[$components->firstWhere('code', 'ESI')->id] = 0; // no ESI above ₹21,000, as an admin would set it
+        }
         if (! $withPf) {
             $amounts[$components->firstWhere('code', 'PF')->id] = 0;
         }

@@ -47,7 +47,7 @@ class StaffSalaryTest extends TestCase
         $this->assertSame(9000.0, $amounts[$ids['SPECIAL']]);
     }
 
-    public function test_split_gives_pf_and_esi_their_statutory_full_month_amounts(): void
+    public function test_split_gives_pf_and_esi_their_rates_with_no_built_in_limits(): void
     {
         $ids = $this->ids();
         $service = app(SalaryStructureService::class);
@@ -56,43 +56,42 @@ class StaffSalaryTest extends TestCase
         $this->assertSame(1200.0, $small[$ids['PF']]);   // 12% of Basic 10,000
         $this->assertSame(150.0, $small[$ids['ESI']]);   // 0.75% of 20,000
 
+        SalaryComponent::where('code', 'PF')->update(['value' => 10]);
         $large = $service->split(40000, SalaryComponent::ordered()->get());
-        $this->assertSame(1800.0, $large[$ids['PF']]);   // Basic 20,000 capped at 15,000
-        $this->assertSame(0.0, $large[$ids['ESI']]);     // gross above 21,000
-        $this->assertSame(2400.0, $service->split(40000, SalaryComponent::ordered()->get(), pfOnFullBasic: true)[$ids['PF']]);
+        $this->assertSame(2000.0, $large[$ids['PF']]);   // the changed rate, on the full Basic 20,000
+        $this->assertSame(300.0, $large[$ids['ESI']]);
     }
 
-    public function test_revision_recalculates_pf_and_esi_and_leaves_out_those_set_to_zero(): void
+    public function test_revision_saves_pf_and_esi_as_entered_and_leaves_out_zero(): void
     {
         $ids = $this->ids();
 
         $this->post(route('admin.staff.salary.store', $this->staff), [
             'effective_from' => '2026-04-01',
-            'amounts' => [$ids['BASIC'] => 8000, $ids['HRA'] => 3200, $ids['SPECIAL'] => 4800, $ids['PF'] => 5, $ids['ESI'] => 0],
+            'amounts' => [$ids['BASIC'] => 8000, $ids['HRA'] => 3200, $ids['SPECIAL'] => 4800, $ids['PF'] => 999, $ids['ESI'] => 0],
         ])->assertSessionHasNoErrors();
 
-        $items = $this->staff->salaryStructures()->sole()->items->keyBy('code');
-        $this->assertSame('960.00', $items['PF']->monthly_amount);
+        $structure = $this->staff->salaryStructures()->sole();
+        $items = $structure->items->keyBy('code');
+        $this->assertSame('999.00', $items['PF']->monthly_amount);
         $this->assertSame('deduction', $items['PF']->type);
+        $this->assertTrue($items['PF']->is_prorated);
         $this->assertArrayNotHasKey('ESI', $items->all());
-        $this->assertSame('16000.00', $this->staff->salaryStructures()->sole()->monthly_gross);
+        $this->assertSame('16000.00', $structure->monthly_gross);
     }
 
-    public function test_pf_and_esi_codes_must_use_the_statutory_rule(): void
+    public function test_pf_and_esi_codes_must_be_deductions_with_any_rate(): void
     {
         SalaryComponent::whereIn('code', ['PF', 'ESI'])->delete();
 
         $this->post(route('admin.org.store', 'salary-components'), [
-            'name' => 'PF', 'code' => 'pf', 'type' => 'deduction', 'calculation' => 'fixed', 'value' => 1800, 'sort_order' => 1,
-        ])->assertSessionHasErrors('calculation');
+            'name' => 'PF', 'code' => 'pf', 'type' => 'earning', 'calculation' => 'percent_of_basic', 'value' => 12, 'sort_order' => 1,
+        ])->assertSessionHasErrors('type');
         $this->post(route('admin.org.store', 'salary-components'), [
-            'name' => 'Canteen', 'code' => 'CANTEEN', 'type' => 'deduction', 'calculation' => 'statutory', 'value' => 0, 'sort_order' => 1,
-        ])->assertSessionHasErrors('calculation');
-        $this->post(route('admin.org.store', 'salary-components'), [
-            'name' => 'ESI', 'code' => 'ESI', 'type' => 'deduction', 'calculation' => 'statutory', 'value' => 0, 'sort_order' => 2, 'is_active' => '1',
+            'name' => 'Provident Fund', 'code' => 'PF', 'type' => 'deduction', 'calculation' => 'percent_of_basic', 'value' => 10, 'sort_order' => 1, 'is_prorated' => '1', 'is_active' => '1',
         ])->assertSessionHasNoErrors();
 
-        $this->get(route('admin.org.index', 'salary-components'))->assertOk()->assertSee('0.75% of earnings (gross up to ₹21,000)');
+        $this->get(route('admin.org.index', 'salary-components'))->assertOk()->assertSee('10% of Basic');
     }
 
     public function test_balance_never_goes_negative_when_fixed_parts_exceed_gross(): void

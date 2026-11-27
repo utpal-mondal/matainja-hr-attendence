@@ -33,7 +33,7 @@ class StaffSalaryController extends AdminController
         // otherwise start from the current salary.
         $gross = $request->query('gross');
         if (is_numeric($gross) && $gross >= 0) {
-            $proposed = $this->salaries->split((float) $gross, $components, (bool) $staff->payrollProfile?->pf_on_full_basic);
+            $proposed = $this->salaries->split((float) $gross, $components);
         } else {
             $byComponent = $current?->items->pluck('monthly_amount', 'salary_component_id') ?? collect();
             $proposed = $components->mapWithKeys(fn ($c) => [$c->id => (float) ($byComponent[$c->id] ?? 0)])->all();

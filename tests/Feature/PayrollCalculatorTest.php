@@ -23,20 +23,19 @@ class PayrollCalculatorTest extends TestCase
 
     /**
      * @param  array<string, float>  $earnings  code => monthly amount
-     * @param  list<string>  $statutory  PF / ESI components the salary includes
+     * @param  array<string, float>  $deductions  code => monthly amount (PF, ESI, ...), cut for LOP
      */
-    private function structure(array $earnings, array $statutory = ['PF', 'ESI']): StaffSalaryStructure
+    private function structure(array $earnings, array $deductions = []): StaffSalaryStructure
     {
         $structure = new StaffSalaryStructure(['monthly_gross' => array_sum($earnings)]);
         $items = collect($earnings)->map(fn ($amount, $code) => new StaffSalaryStructureItem([
             'code' => $code, 'name' => $code, 'type' => 'earning', 'monthly_amount' => $amount,
             'is_taxable' => true, 'is_prorated' => true, 'sort_order' => 0,
         ]))->values();
-        foreach ($statutory as $code) {
-            // The stored amount is only the full-month estimate; payroll works it out again.
+        foreach ($deductions as $code => $amount) {
             $items->push(new StaffSalaryStructureItem([
-                'code' => $code, 'name' => $code === 'PF' ? 'Provident Fund' : 'ESI', 'type' => 'deduction', 'monthly_amount' => 1,
-                'is_taxable' => false, 'is_prorated' => false, 'sort_order' => 0,
+                'code' => $code, 'name' => $code === 'PF' ? 'Provident Fund' : $code, 'type' => 'deduction', 'monthly_amount' => $amount,
+                'is_taxable' => false, 'is_prorated' => true, 'sort_order' => 0,
             ]));
         }
         $structure->setRelation('items', new EloquentCollection($items));
@@ -45,71 +44,79 @@ class PayrollCalculatorTest extends TestCase
     }
 
     /** @return array<string, mixed> */
-    private function calculate(StaffSalaryStructure $structure, float $lopDays = 0, int $periodDays = 30, array $ytd = self::NO_YTD, int $monthsLeft = 12, ?StaffPayrollProfile $profile = null, array $adjustments = [], int $overtimeMinutes = 0, float $overtimeMultiplier = 0): array
+    private function calculate(StaffSalaryStructure $structure, float $lopDays = 0, int $periodDays = 30, array $ytd = self::NO_YTD, int $monthsLeft = 12, ?StaffPayrollProfile $profile = null, array $adjustments = [], int $overtimeMinutes = 0, float $overtimeMultiplier = 0, float $esiEmployerRate = 0, ?float $esiOverride = null): array
     {
         return app(PayrollCalculator::class)->calculate($structure, $profile, $periodDays, $lopDays, $overtimeMinutes,
-            $overtimeMultiplier, collect($adjustments), 'WB', $ytd, $monthsLeft);
+            $overtimeMultiplier, collect($adjustments), 'WB', $ytd, $monthsLeft, null, $esiOverride, $esiEmployerRate);
     }
 
-    public function test_full_month_above_esi_limit_deducts_capped_pf_and_pt(): void
+    public function test_pf_from_the_salary_is_deducted_and_matched_by_the_employer(): void
     {
-        $result = $this->calculate($this->structure(['BASIC' => 15000, 'HRA' => 6000, 'SPECIAL' => 9000]));
+        $result = $this->calculate($this->structure(['BASIC' => 15000, 'HRA' => 6000, 'SPECIAL' => 9000], ['PF' => 1800]));
 
         $this->assertSame(30000.0, $result['gross_earnings']);
         $this->assertSame(1800.0, $result['employee_pf']);
         $this->assertSame(1800.0, $result['employer_pf']);
         $this->assertSame(1250.0, $result['employer_eps']);
+        $this->assertSame(15000.0, $result['pf_wages']);
         $this->assertSame(0.0, $result['employee_esi']);
         $this->assertSame(150.0, $result['professional_tax']);
         $this->assertSame(0.0, $result['tds']);
         $this->assertSame(28050.0, $result['net_pay']);
     }
 
-    public function test_lop_days_cut_earnings_and_esi_applies_within_the_limit(): void
+    public function test_lop_days_cut_earnings_pf_and_esi(): void
     {
-        $result = $this->calculate($this->structure(['BASIC' => 10000, 'HRA' => 4000, 'SPECIAL' => 6000]), lopDays: 3);
+        $result = $this->calculate($this->structure(['BASIC' => 10000, 'HRA' => 4000, 'SPECIAL' => 6000], ['PF' => 1200, 'ESI' => 150]), lopDays: 3);
 
         $this->assertSame(18000.0, $result['gross_earnings']);
         $this->assertSame(1080.0, $result['employee_pf']);
         $this->assertSame(135.0, $result['employee_esi']);
-        $this->assertSame(585.0, $result['employer_esi']);
+        $this->assertSame(0.0, $result['employer_esi']);
         $this->assertSame(130.0, $result['professional_tax']);
         $this->assertSame(16655.0, $result['net_pay']);
     }
 
-    public function test_pf_on_full_basic_and_opt_outs(): void
+    public function test_employer_esi_is_its_rate_on_earnings_and_overtime_for_those_who_pay_esi(): void
     {
-        $structure = $this->structure(['BASIC' => 40000, 'SPECIAL' => 10000]);
-        $profile = new StaffPayrollProfile(['pf_applicable' => true, 'pf_on_full_basic' => true, 'esi_applicable' => true, 'pt_applicable' => false, 'tax_regime' => 'new']);
+        $bonus = new PayrollAdjustment(['type' => 'earning', 'name' => 'Bonus', 'amount' => 5000, 'is_taxable' => true]);
+        $structure = $this->structure(['BASIC' => 10000, 'HRA' => 4000, 'SPECIAL' => 6000], ['ESI' => 150]);
 
-        $result = $this->calculate($structure, profile: $profile);
-        $this->assertSame(4800.0, $result['employee_pf']);
-        $this->assertSame(1250.0, $result['employer_eps']);
-        $this->assertSame(0.0, $result['professional_tax']);
+        // 18,000 earned (3 LOP days) + 400 overtime; the bonus is left out. 3.25% of 18,400 = 598.
+        $result = $this->calculate($structure, lopDays: 3, adjustments: [$bonus], overtimeMinutes: 288, overtimeMultiplier: 1, esiEmployerRate: 3.25);
+        $this->assertSame(135.0, $result['employee_esi']);
+        $this->assertSame(598.0, $result['employer_esi']);
 
+        $this->assertSame(0.0, $this->calculate($this->structure(['BASIC' => 10000, 'SPECIAL' => 10000]), esiEmployerRate: 3.25)['employer_esi']);
+        $this->assertSame(0.0, $this->calculate($structure, esiEmployerRate: 3.25, esiOverride: 0)['employer_esi']);
+        $this->assertSame(0.0, $this->calculate($structure)['employer_esi']);
     }
 
-    public function test_pf_and_esi_are_only_deducted_when_the_salary_includes_their_components(): void
+    public function test_pf_and_esi_are_the_amounts_on_the_salary_whatever_the_old_limits(): void
     {
-        $earnings = ['BASIC' => 10000, 'HRA' => 4000, 'SPECIAL' => 6000];
+        // A changed rate (10% of Basic) and ESI above the old ₹21,000 limit are deducted as set.
+        $structure = $this->structure(['BASIC' => 40000, 'SPECIAL' => 10000], ['PF' => 4000, 'ESI' => 375]);
+        $profile = new StaffPayrollProfile(['pf_on_full_basic' => true, 'pt_applicable' => false, 'tax_regime' => 'new']);
 
-        $none = $this->calculate($this->structure($earnings, statutory: []));
-        $this->assertSame(0.0, $none['employee_pf']);
-        $this->assertSame(0.0, $none['employer_pf']);
-        $this->assertSame(0.0, $none['employee_esi']);
-        $this->assertSame(0.0, $none['employer_esi']);
-        $this->assertNotContains('PF', array_column($none['items'], 'code'));
+        $result = $this->calculate($structure, profile: $profile);
+        $this->assertSame(4000.0, $result['employee_pf']);
+        $this->assertSame(4000.0, $result['employer_pf']);
+        $this->assertSame(1250.0, $result['employer_eps']);
+        $this->assertSame(40000.0, $result['pf_wages']);
+        $this->assertSame(375.0, $result['employee_esi']);
+        $this->assertSame(1, count(array_keys(array_column($result['items'], 'code'), 'PF')));
+        $this->assertSame(4375.0, $result['total_deductions']);
+    }
 
-        $esiOnly = $this->calculate($this->structure($earnings, statutory: ['ESI']));
-        $this->assertSame(0.0, $esiOnly['employee_pf']);
-        $this->assertSame(150.0, $esiOnly['employee_esi']);
+    public function test_no_pf_or_esi_without_their_components(): void
+    {
+        $result = $this->calculate($this->structure(['BASIC' => 10000, 'HRA' => 4000, 'SPECIAL' => 6000]));
 
-        // The formula is used, not the amount stored on the salary, and each appears once.
-        $both = $this->calculate($this->structure($earnings));
-        $this->assertSame(1200.0, $both['employee_pf']);
-        $this->assertSame(150.0, $both['employee_esi']);
-        $this->assertSame(1, count(array_keys(array_column($both['items'], 'code'), 'PF')));
-        $this->assertSame(1350.0 + 130.0, $both['total_deductions']);
+        $this->assertSame(0.0, $result['employee_pf']);
+        $this->assertSame(0.0, $result['employer_pf']);
+        $this->assertSame(0.0, $result['pf_wages']);
+        $this->assertSame(0.0, $result['employee_esi']);
+        $this->assertSame(['BASIC', 'HRA', 'SPECIAL', 'PT'], array_column($result['items'], 'code'));
     }
 
     public function test_tds_spreads_the_projected_annual_tax_over_the_months_left(): void
@@ -144,7 +151,7 @@ class PayrollCalculatorTest extends TestCase
         $bonus = new PayrollAdjustment(['type' => 'earning', 'name' => 'Diwali bonus', 'amount' => 5000, 'is_taxable' => true]);
         $advance = new PayrollAdjustment(['type' => 'deduction', 'name' => 'Advance recovery', 'amount' => 2000]);
 
-        $result = $this->calculate($this->structure(['BASIC' => 15000, 'SPECIAL' => 15000]),
+        $result = $this->calculate($this->structure(['BASIC' => 15000, 'SPECIAL' => 15000], ['PF' => 1800]),
             adjustments: [$bonus, $advance], overtimeMinutes: 120, overtimeMultiplier: 2);
 
         $this->assertSame(35500.0, $result['gross_earnings']);  // 30,000 + 500 overtime + 5,000 bonus

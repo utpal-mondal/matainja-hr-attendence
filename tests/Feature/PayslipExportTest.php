@@ -57,7 +57,9 @@ class PayslipExportTest extends TestCase
         $staff = Staff::create(['employee_code' => $code, 'first_name' => $name, 'employment_status' => 'active', 'joining_date' => '2025-01-01']);
         $components = SalaryComponent::ordered()->get();
         $service = app(SalaryStructureService::class);
-        $service->createRevision($staff, '2026-04-01', $components, $service->split(30000, $components));
+        $amounts = $service->split(30000, $components);
+        $amounts[$components->firstWhere('code', 'ESI')->id] = 0; // no ESI above ₹21,000, as an admin would set it
+        $service->createRevision($staff, '2026-04-01', $components, $amounts);
         for ($d = CarbonImmutable::create(2026, 10, 1); $d->month === 10; $d = $d->addDay()) {
             if (! $d->isSunday()) {
                 Attendance::create(['staff_id' => $staff->id, 'work_date' => $d->toDateString(), 'status' => 'present']);

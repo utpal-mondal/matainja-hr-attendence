@@ -30,6 +30,8 @@ class PayrollService
 
     public const SETTING_OVERTIME_MULTIPLIER = 'payroll.overtime_multiplier';
 
+    public const SETTING_ESI_EMPLOYER_RATE = 'payroll.esi_employer_rate';
+
     public const DEFAULT_WEEKLY_OFF_DAYS = '7';
 
     public const LOP_BASES = ['calendar' => 'Calendar days in the month', 'fixed_30' => 'Fixed 30 days'];
@@ -102,6 +104,7 @@ class PayrollService
             $periodDays = $fixed30 ? 30 : $start->daysInMonth;
             $ptState = $this->ptState();
             $overtimeMultiplier = $this->overtimeMultiplier();
+            $esiEmployerRate = $this->esiEmployerRate();
             $monthsLeft = 12 - (int) $run->financialYearStart()->diffInMonths($start);
 
             // A full recalculation rebuilds the list; redoing a few payslips only replaces their entries.
@@ -131,7 +134,7 @@ class PayrollService
                 $result = $this->calculator->calculate($structure, $employee->payrollProfile, $periodDays, $lop,
                     $days['overtime_minutes'], $overtimeMultiplier, $adjustments->get($employee->id, collect()),
                     $ptState, $yearToDate[$employee->id] ?? ['taxable' => 0.0, 'tds' => 0.0, 'pf' => 0.0, 'pt' => 0.0], $monthsLeft,
-                    $pfOverride !== null ? (float) $pfOverride : null, $esiOverride !== null ? (float) $esiOverride : null);
+                    $pfOverride !== null ? (float) $pfOverride : null, $esiOverride !== null ? (float) $esiOverride : null, $esiEmployerRate);
 
                 $payslip = $run->payslips()->create([
                     'staff_id' => $employee->id,
@@ -222,6 +225,12 @@ class PayrollService
     public function overtimeMultiplier(): float
     {
         return max((float) ($this->setting(self::SETTING_OVERTIME_MULTIPLIER) ?? 0), 0);
+    }
+
+    /** Employer ESI, % of earnings; until it is saved in settings, the rate in config/payroll.php. */
+    public function esiEmployerRate(): float
+    {
+        return max((float) ($this->setting(self::SETTING_ESI_EMPLOYER_RATE) ?? config('payroll.esi.employer_rate')), 0);
     }
 
     /**
