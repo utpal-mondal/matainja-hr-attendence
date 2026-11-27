@@ -38,13 +38,17 @@ class PfEcrTest extends TestCase
     }
 
     /** @param  array<string, mixed>  $profile */
-    private function employee(string $name, float $gross, array $profile = [], array $absentDays = []): Staff
+    private function employee(string $name, float $gross, array $profile = [], array $absentDays = [], bool $withPf = true): Staff
     {
         $staff = Staff::create(['employee_code' => 'EMP-'.Staff::count() + 1, 'first_name' => $name, 'employment_status' => 'active', 'joining_date' => '2025-01-01']);
         $staff->payrollProfile()->create($profile);
         $components = SalaryComponent::ordered()->get();
         $service = app(SalaryStructureService::class);
-        $service->createRevision($staff, '2026-04-01', $components, $service->split($gross, $components));
+        $amounts = $service->split($gross, $components, (bool) ($profile['pf_on_full_basic'] ?? false));
+        if (! $withPf) {
+            $amounts[$components->firstWhere('code', 'PF')->id] = 0;
+        }
+        $service->createRevision($staff, '2026-04-01', $components, $amounts);
         for ($d = CarbonImmutable::create(2026, 10, 1); $d->month === 10; $d = $d->addDay()) {
             if (! $d->isSunday() && ! in_array($d->day, $absentDays, true)) {
                 Attendance::create(['staff_id' => $staff->id, 'work_date' => $d->toDateString(), 'status' => 'present']);
@@ -68,7 +72,7 @@ class PfEcrTest extends TestCase
         $this->employee("Asha O'Roy-Dás", 30000, ['uan' => '100123456789']);
         $this->employee('Rich', 80000, ['uan' => '100987654321', 'pf_on_full_basic' => true]);
         $this->employee('Bimal', 30000);                                   // no UAN
-        $this->employee('Optout', 30000, ['uan' => '100555555555', 'pf_applicable' => false]);
+        $this->employee('Optout', 30000, ['uan' => '100555555555'], withPf: false);
         $run = $this->lockedOctober();
 
         $response = $this->get(route('admin.payroll.ecr', $run))->assertOk();

@@ -125,8 +125,8 @@
                             @if ($p->lop_days_override !== null)<span class="badge warn" title="Changed by an admin (attendance says {{ $days($p->lop_days_calculated) }})">edited</span>@endif
                         </td>
                         <td class="right">{{ $money($p->gross_earnings) }}</td>
-                        <td class="right">{{ $money($p->employee_pf) }}</td>
-                        <td class="right">{{ $money($p->employee_esi) }}</td>
+                        <td class="right">{{ $money($p->employee_pf) }}@if ($p->employee_pf_override !== null) <span class="badge warn" title="Set by an admin">edited</span>@endif</td>
+                        <td class="right">{{ $money($p->employee_esi) }}@if ($p->employee_esi_override !== null) <span class="badge warn" title="Set by an admin">edited</span>@endif</td>
                         <td class="right">{{ $money($p->professional_tax) }}</td>
                         <td class="right">{{ $money($p->tds) }}</td>
                         <td class="right">

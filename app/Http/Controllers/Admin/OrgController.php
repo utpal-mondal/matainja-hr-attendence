@@ -301,7 +301,7 @@ class OrgController extends AdminController
             ],
             'salary-components' => [
                 'model' => SalaryComponent::class, 'title' => 'Salary components', 'singular' => 'Salary component',
-                'intro' => 'The earnings (and fixed deductions) an employee\'s salary is split into. "Balance of gross" takes whatever is left, so the parts always add up. PF, ESI, Professional Tax and TDS are worked out by payroll; don\'t add them here. Changes only affect salary revisions saved afterwards.',
+                'intro' => 'The earnings (and fixed deductions) an employee\'s salary is split into. "Balance of gross" takes whatever is left, so the parts always add up. PF and ESI are deductions with codes PF / ESI and the "Statutory formula" rule: payroll deducts them, using the statutory rates and limits, for everyone whose salary includes them. Professional Tax and TDS are worked out by payroll; don\'t add them here. Changes only affect salary revisions saved afterwards.',
                 'search' => 'name', 'order' => ['is_active' => 'desc', 'type' => 'desc', 'sort_order' => 'asc', 'name' => 'asc'],
                 'guard' => ['structureItems' => 'salary revisions using it (turn it off instead)'],
                 'columns' => [
@@ -316,12 +316,18 @@ class OrgController extends AdminController
                 'fields' => [
                     'name' => ['label' => 'Name', 'rules' => ['required', 'string', 'max:100'], 'hint' => 'e.g. Basic, HRA, Special Allowance'],
                     'code' => ['label' => 'Code', 'rules' => fn ($r) => ['required', 'alpha_dash', 'max:30', Rule::unique('salary_components', 'code')->ignore($r)],
-                        'hint' => 'Use BASIC for Basic pay: "% of Basic" and PF use it'],
+                        'hint' => 'Use BASIC for Basic pay: "% of Basic" and PF use it. PF and ESI are kept for the statutory deductions'],
                     'type' => ['label' => 'Type', 'type' => 'select', 'options' => fn () => SalaryComponent::TYPES, 'rules' => ['required', Rule::in(array_keys(SalaryComponent::TYPES))]],
                     'calculation' => ['label' => 'Calculation', 'type' => 'select', 'options' => fn () => SalaryComponent::CALCULATIONS, 'rules' => ['required', Rule::in(array_keys(SalaryComponent::CALCULATIONS)),
                         function (string $attribute, mixed $value, \Closure $fail) {
                             if ($value === 'balance' && request('type') !== 'earning') {
                                 $fail('Only an earning can take the balance of gross.');
+                            }
+                            $isStatutoryCode = in_array(strtoupper((string) request('code')), SalaryComponent::STATUTORY_CODES, true);
+                            if ($value === 'statutory' && ! $isStatutoryCode) {
+                                $fail('The statutory formula is only for the PF and ESI components (code PF or ESI).');
+                            } elseif ($isStatutoryCode && ($value !== 'statutory' || request('type') !== 'deduction')) {
+                                $fail('PF and ESI must be deductions with the "Statutory formula" rule.');
                             }
                         }]],
                     'value' => ['label' => 'Amount (₹) or percent', 'type' => 'number', 'step' => '0.01', 'rules' => ['required', 'numeric', 'min:0', 'max:99999999',
@@ -329,7 +335,7 @@ class OrgController extends AdminController
                             if (str_starts_with((string) request('calculation'), 'percent_') && $value > 100) {
                                 $fail('A percentage can\'t be more than 100.');
                             }
-                        }], 'hint' => 'Ignored for "Balance of gross"'],
+                        }], 'hint' => 'Ignored for "Balance of gross" and "Statutory formula"'],
                     'sort_order' => ['label' => 'Order on payslip', 'type' => 'number', 'rules' => ['required', 'integer', 'min:0', 'max:1000']],
                     'is_taxable' => ['label' => 'Taxable (counts for TDS)', 'type' => 'checkbox', 'rules' => ['nullable']],
                     'is_prorated' => ['label' => 'Cut for loss-of-pay days', 'type' => 'checkbox', 'rules' => ['nullable']],

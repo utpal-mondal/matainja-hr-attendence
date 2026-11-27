@@ -14,7 +14,7 @@ class Payslip extends Model
         'payroll_run_id', 'staff_id', 'staff_salary_structure_id',
         'employee_code', 'employee_name', 'designation', 'department', 'pan', 'uan', 'tax_regime',
         'period_days', 'lop_days_calculated', 'lop_days_override', 'lop_days', 'paid_days', 'day_counts', 'overtime_minutes',
-        'gross_earnings', 'taxable_earnings', 'employee_pf', 'pf_wages', 'eps_wages', 'employee_esi', 'professional_tax', 'tds',
+        'gross_earnings', 'taxable_earnings', 'employee_pf', 'employee_pf_override', 'pf_wages', 'eps_wages', 'employee_esi', 'employee_esi_override', 'professional_tax', 'tds',
         'total_deductions', 'net_pay', 'employer_pf', 'employer_eps', 'employer_esi',
     ];
 
@@ -37,6 +37,8 @@ class Payslip extends Model
             'pf_wages' => 'decimal:2',
             'eps_wages' => 'decimal:2',
             'employee_esi' => 'decimal:2',
+            'employee_pf_override' => 'decimal:2',
+            'employee_esi_override' => 'decimal:2',
             'professional_tax' => 'decimal:2',
             'tds' => 'decimal:2',
             'total_deductions' => 'decimal:2',

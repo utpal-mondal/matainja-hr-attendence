@@ -141,6 +141,48 @@ class PayrollRunTest extends TestCase
         $this->assertSame('28050.00', $run->payslips()->sole()->net_pay);
     }
 
+    public function test_admin_can_override_pf_and_esi_and_it_survives_a_recalculation(): void
+    {
+        $run = $this->runOctober();
+
+        $this->put(route('admin.payroll.payslips.statutory', [$run, $run->payslips()->sole()]), [
+            'employee_pf_override' => 2500, 'employee_esi_override' => 100,
+        ])->assertSessionHas('success');
+
+        $payslip = $run->payslips()->sole();
+        $this->assertSame('2500.00', $payslip->employee_pf);
+        $this->assertSame('100.00', $payslip->employee_esi);
+        $this->assertSame('1800.00', $payslip->employer_pf);
+        $this->assertSame('0.00', $payslip->employer_esi);
+        $this->assertSame('27250.00', $payslip->net_pay);
+        $this->assertSame(2500.0, (float) $payslip->items()->where('code', 'PF')->value('amount'));
+
+        $this->post(route('admin.payroll.recalculate', $run))->assertSessionHas('success');
+        $this->assertSame('2500.00', $run->payslips()->sole()->employee_pf);
+        $this->assertSame('27250.00', $run->fresh()->total_net);
+
+        $this->put(route('admin.payroll.payslips.statutory', [$run, $run->payslips()->sole()]), [
+            'employee_pf_override' => '', 'employee_esi_override' => '',
+        ])->assertSessionHas('success');
+        $payslip = $run->payslips()->sole();
+        $this->assertNull($payslip->employee_pf_override);
+        $this->assertSame('1800.00', $payslip->employee_pf);
+        $this->assertSame('28050.00', $payslip->net_pay);
+    }
+
+    public function test_pf_and_esi_override_is_rejected_when_negative_or_the_payroll_is_locked(): void
+    {
+        $run = $this->runOctober();
+
+        $this->put(route('admin.payroll.payslips.statutory', [$run, $run->payslips()->sole()]), ['employee_pf_override' => -1])
+            ->assertSessionHasErrors('employee_pf_override');
+
+        $this->post(route('admin.payroll.lock', $run));
+        $this->put(route('admin.payroll.payslips.statutory', [$run, $run->payslips()->sole()]), ['employee_pf_override' => 500])
+            ->assertSessionHas('error', 'This payroll is locked. Reopen it to make changes.');
+        $this->assertSame('1800.00', $run->payslips()->sole()->employee_pf);
+    }
+
     public function test_one_off_adjustments_are_added_and_removed(): void
     {
         $run = $this->runOctober();

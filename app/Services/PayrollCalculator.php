@@ -6,6 +6,7 @@ use App\Models\PayrollAdjustment;
 use App\Models\SalaryComponent;
 use App\Models\StaffPayrollProfile;
 use App\Models\StaffSalaryStructure;
+use App\Models\StaffSalaryStructureItem;
 use Illuminate\Support\Collection;
 
 /**
@@ -21,6 +22,8 @@ class PayrollCalculator
      * @param  Collection<int, PayrollAdjustment>  $adjustments
      * @param  array{taxable: float, tds: float, pf: float, pt: float}  $yearToDate  earlier payslips in this financial year
      * @param  int  $monthsLeft  months left in the financial year, including this one (April = 12, March = 1)
+     * @param  float|null  $employeePfOverride  employee PF set by an admin; employer PF and PF wages stay calculated
+     * @param  float|null  $employeeEsiOverride  employee ESI set by an admin; employer ESI stays calculated
      * @return array{items: list<array{code: string, name: string, type: string, source: string, amount: float, sort_order: int}>, gross_earnings: float, taxable_earnings: float, employee_pf: float, pf_wages: float, eps_wages: float, employee_esi: float, professional_tax: float, tds: float, total_deductions: float, net_pay: float, employer_pf: float, employer_eps: float, employer_esi: float}
      */
     public function calculate(
@@ -34,6 +37,8 @@ class PayrollCalculator
         ?string $ptState,
         array $yearToDate,
         int $monthsLeft,
+        ?float $employeePfOverride = null,
+        ?float $employeeEsiOverride = null,
     ): array {
         $profile ??= new StaffPayrollProfile(['pf_applicable' => true, 'pf_on_full_basic' => false, 'esi_applicable' => true, 'pt_applicable' => true, 'tax_regime' => 'new']);
         $ratio = $periodDays > 0 ? max(min(($periodDays - $lopDays) / $periodDays, 1), 0) : 0;
@@ -80,19 +85,29 @@ class PayrollCalculator
 
         $gross = round(array_sum(array_column($items, 'amount')), 2);
 
+        // PF and ESI apply when the salary includes their components; the amount is always the statutory formula.
+        $pfItem = $this->statutoryItem($structure, SalaryComponent::PF_CODE);
+        $esiItem = $this->statutoryItem($structure, SalaryComponent::ESI_CODE);
+
         // Provident Fund on earned Basic.
         $pf = ['employee' => 0.0, 'employer' => 0.0, 'eps' => 0.0, 'wages' => 0.0, 'eps_wages' => 0.0];
-        if ($profile->pf_applicable && $earnedBasic > 0) {
+        if ($pfItem && $earnedBasic > 0) {
             $pf = $this->providentFund($earnedBasic, $profile->pf_on_full_basic);
+        }
+        if ($employeePfOverride !== null) {
+            $pf['employee'] = round($employeePfOverride, 2);
         }
 
         // ESI while the agreed monthly gross is within the limit.
         $esi = ['employee' => 0.0, 'employer' => 0.0];
-        if ($profile->esi_applicable && (float) $structure->monthly_gross <= config('payroll.esi.wage_limit') && $salaryEarnings > 0) {
+        if ($esiItem && (float) $structure->monthly_gross <= config('payroll.esi.wage_limit') && $salaryEarnings > 0) {
             $esi = [
                 'employee' => ceil($salaryEarnings * config('payroll.esi.employee_rate') / 100),
                 'employer' => ceil($salaryEarnings * config('payroll.esi.employer_rate') / 100),
             ];
+        }
+        if ($employeeEsiOverride !== null) {
+            $esi['employee'] = round($employeeEsiOverride, 2);
         }
 
         $pt = $profile->pt_applicable ? $this->professionalTax($gross, $ptState) : 0.0;
@@ -100,7 +115,7 @@ class PayrollCalculator
         // TDS: project the year's taxable salary, then spread the tax still due over the months left.
         $monthsLeft = max($monthsLeft, 1);
         $futureMonths = $monthsLeft - 1;
-        $futurePf = $profile->pf_applicable && $fullMonthBasic > 0 ? $this->providentFund($fullMonthBasic, $profile->pf_on_full_basic)['employee'] : 0.0;
+        $futurePf = $pfItem && $fullMonthBasic > 0 ? $this->providentFund($fullMonthBasic, $profile->pf_on_full_basic)['employee'] : 0.0;
         $futurePt = $profile->pt_applicable ? $this->professionalTax((float) $structure->monthly_gross, $ptState) : 0.0;
         $annualTax = $this->incomeTax->annualTax(
             $yearToDate['taxable'] + $taxable + $futureMonths * $fullMonthTaxable,
@@ -110,12 +125,21 @@ class PayrollCalculator
         );
         $tds = max(round(($annualTax - $yearToDate['tds']) / $monthsLeft), 0);
 
-        foreach ([['PF', 'Provident Fund', $pf['employee'], 1], ['ESI', 'ESI', $esi['employee'], 2], ['PT', 'Professional Tax', $pt, 3], ['TDS', 'Income Tax (TDS)', $tds, 4]] as [$code, $name, $amount, $order]) {
+        $statutory = [
+            [SalaryComponent::PF_CODE, $pfItem->name ?? 'Provident Fund', $pf['employee'], 1],
+            [SalaryComponent::ESI_CODE, $esiItem->name ?? 'ESI', $esi['employee'], 2],
+            ['PT', 'Professional Tax', $pt, 3],
+            ['TDS', 'Income Tax (TDS)', $tds, 4],
+        ];
+        foreach ($statutory as [$code, $name, $amount, $order]) {
             if ($amount > 0) {
                 $items[] = $this->line($code, $name, 'deduction', 'statutory', $amount, $order);
             }
         }
         foreach ($structure->items->where('type', 'deduction') as $item) {
+            if ($item === $pfItem || $item === $esiItem) {
+                continue;
+            }
             $items[] = $this->line($item->code, $item->name, 'deduction', 'salary', (float) $item->monthly_amount, 10 + $item->sort_order);
         }
         foreach ($adjustments->where('type', 'deduction') as $adjustment) {
@@ -161,6 +185,13 @@ class PayrollCalculator
             'wages' => $wage,
             'eps_wages' => $epsWage,
         ];
+    }
+
+    /** The salary's PF or ESI deduction component, if it has one. */
+    private function statutoryItem(StaffSalaryStructure $structure, string $code): ?StaffSalaryStructureItem
+    {
+        return $structure->items->first(fn (StaffSalaryStructureItem $item) => $item->type === 'deduction'
+            && strtoupper($item->code) === $code && (float) $item->monthly_amount > 0);
     }
 
     public function professionalTax(float $gross, ?string $state): float

@@ -33,7 +33,7 @@ class StaffSalaryController extends AdminController
         // otherwise start from the current salary.
         $gross = $request->query('gross');
         if (is_numeric($gross) && $gross >= 0) {
-            $proposed = $this->salaries->split((float) $gross, $components);
+            $proposed = $this->salaries->split((float) $gross, $components, (bool) $staff->payrollProfile?->pf_on_full_basic);
         } else {
             $byComponent = $current?->items->pluck('monthly_amount', 'salary_component_id') ?? collect();
             $proposed = $components->mapWithKeys(fn ($c) => [$c->id => (float) ($byComponent[$c->id] ?? 0)])->all();
@@ -79,7 +79,8 @@ class StaffSalaryController extends AdminController
             'bank_ifsc.regex' => 'IFSC must look like SBIN0001234.',
         ]);
 
-        foreach (['pf_applicable', 'pf_on_full_basic', 'esi_applicable', 'pt_applicable'] as $flag) {
+        // PF and ESI are switched on or off by including their salary components.
+        foreach (['pf_on_full_basic', 'pt_applicable'] as $flag) {
             $data[$flag] = $request->boolean($flag);
         }
         // An empty account number box keeps the saved number.

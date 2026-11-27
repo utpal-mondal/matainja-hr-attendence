@@ -116,6 +116,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::get('/payroll/{payrollRun}/payslips/{payslip}', [Admin\PayslipController::class, 'show'])->name('payroll.payslips.show');
             Route::get('/payroll/{payrollRun}/payslips/{payslip}/pdf', [Admin\PayslipController::class, 'pdf'])->name('payroll.payslips.pdf');
             Route::put('/payroll/{payrollRun}/payslips/{payslip}/lop', [Admin\PayslipController::class, 'updateLop'])->name('payroll.payslips.lop');
+            Route::put('/payroll/{payrollRun}/payslips/{payslip}/statutory', [Admin\PayslipController::class, 'updateStatutory'])->name('payroll.payslips.statutory');
             Route::post('/payroll/{payrollRun}/payslips/{payslip}/adjustments', [Admin\PayslipController::class, 'storeAdjustment'])->name('payroll.adjustments.store');
             Route::delete('/payroll/{payrollRun}/adjustments/{adjustment}', [Admin\PayslipController::class, 'destroyAdjustment'])->name('payroll.adjustments.destroy');
         });

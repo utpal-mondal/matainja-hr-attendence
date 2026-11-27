@@ -58,8 +58,8 @@ class PayrollService
     }
 
     /**
-     * (Re)calculate the payslips of a draft run. Admin LOP overrides and
-     * adjustments are kept. Pass staff ids to redo only those payslips.
+     * (Re)calculate the payslips of a draft run. Admin LOP, PF and ESI
+     * overrides and adjustments are kept. Pass staff ids to redo only those payslips.
      *
      * @param  list<int>|null  $staffIds
      */
@@ -80,6 +80,8 @@ class PayrollService
 
             $existing = $run->payslips()->when($staffIds !== null, fn ($q) => $q->whereIn('staff_id', $staffIds))->get();
             $overrides = $existing->whereNotNull('lop_days_override')->pluck('lop_days_override', 'staff_id');
+            $pfOverrides = $existing->whereNotNull('employee_pf_override')->pluck('employee_pf_override', 'staff_id');
+            $esiOverrides = $existing->whereNotNull('employee_esi_override')->pluck('employee_esi_override', 'staff_id');
             $run->payslips()->whereIn('id', $existing->pluck('id'))->delete();
 
             $structures = StaffSalaryStructure::with('items')->whereIn('staff_id', $ids)
@@ -123,9 +125,13 @@ class PayrollService
                 $override = $overrides->get($employee->id);
                 $lop = $override !== null ? min((float) $override, $periodDays) : $calculatedLop;
 
+                $pfOverride = $pfOverrides->get($employee->id);
+                $esiOverride = $esiOverrides->get($employee->id);
+
                 $result = $this->calculator->calculate($structure, $employee->payrollProfile, $periodDays, $lop,
                     $days['overtime_minutes'], $overtimeMultiplier, $adjustments->get($employee->id, collect()),
-                    $ptState, $yearToDate[$employee->id] ?? ['taxable' => 0.0, 'tds' => 0.0, 'pf' => 0.0, 'pt' => 0.0], $monthsLeft);
+                    $ptState, $yearToDate[$employee->id] ?? ['taxable' => 0.0, 'tds' => 0.0, 'pf' => 0.0, 'pt' => 0.0], $monthsLeft,
+                    $pfOverride !== null ? (float) $pfOverride : null, $esiOverride !== null ? (float) $esiOverride : null);
 
                 $payslip = $run->payslips()->create([
                     'staff_id' => $employee->id,
@@ -140,6 +146,8 @@ class PayrollService
                     'period_days' => $periodDays,
                     'lop_days_calculated' => $calculatedLop,
                     'lop_days_override' => $override,
+                    'employee_pf_override' => $pfOverride,
+                    'employee_esi_override' => $esiOverride,
                     'lop_days' => $lop,
                     'paid_days' => max($periodDays - $lop, 0),
                     'day_counts' => collect($days)->except(['lop_days', 'overtime_minutes'])->all(),

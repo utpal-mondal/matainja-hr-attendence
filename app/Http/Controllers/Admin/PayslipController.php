@@ -18,7 +18,8 @@ use Illuminate\View\View;
 
 /**
  * Review one payslip of a run: see how it was worked out, override the LOP
- * days and add one-off adjustments while the run is a draft.
+ * days or the employee PF / ESI, and add one-off adjustments while the run
+ * is a draft.
  */
 class PayslipController extends AdminController
 {
@@ -56,6 +57,32 @@ class PayslipController extends AdminController
         AuditLog::record('payslip.lop_overridden', $payrollRun, $before, ['staff_id' => $payslip->staff_id, 'lop_days_override' => $override]);
 
         return $this->backToPayslip($payrollRun, $payslip, $override === null ? 'LOP days reset to the attendance figure.' : 'LOP days updated and the payslip recalculated.');
+    }
+
+    /** Set (or clear, when left empty) the employee PF and ESI amounts in place of the calculated ones. */
+    public function updateStatutory(Request $request, PayrollRun $payrollRun, Payslip $payslip): RedirectResponse
+    {
+        if (! $payrollRun->isDraft()) {
+            return back()->with('error', 'This payroll is locked. Reopen it to make changes.');
+        }
+        $request->validate([
+            'employee_pf_override' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+            'employee_esi_override' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+        ]);
+
+        $before = $payslip->only(['employee_pf_override', 'employee_pf', 'employee_esi_override', 'employee_esi', 'net_pay']);
+        $overrides = [
+            'employee_pf_override' => $request->filled('employee_pf_override') ? $request->input('employee_pf_override') : null,
+            'employee_esi_override' => $request->filled('employee_esi_override') ? $request->input('employee_esi_override') : null,
+        ];
+        $this->recalculate($payrollRun, $payslip, fn () => $payslip->update($overrides));
+        AuditLog::record('payslip.statutory_overridden', $payrollRun, $before, ['staff_id' => $payslip->staff_id] + $overrides);
+
+        $message = $overrides['employee_pf_override'] === null && $overrides['employee_esi_override'] === null
+            ? 'PF and ESI reset to the calculated amounts.'
+            : 'PF / ESI updated and the payslip recalculated.';
+
+        return $this->backToPayslip($payrollRun, $payslip, $message);
     }
 
     public function storeAdjustment(Request $request, PayrollRun $payrollRun, Payslip $payslip): RedirectResponse

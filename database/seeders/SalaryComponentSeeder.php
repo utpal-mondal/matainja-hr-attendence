@@ -7,10 +7,17 @@ use Illuminate\Database\Seeder;
 
 /**
  * A common Indian salary split: Basic 50% of gross, HRA 40% of Basic and
- * Special Allowance for the rest. Safe to run again: existing components are kept as they are.
+ * Special Allowance for the rest, plus the statutory PF and ESI deductions.
+ * Safe to run again: existing components are kept as they are.
  */
 class SalaryComponentSeeder extends Seeder
 {
+    /** PF and ESI deductions, worked out by the statutory formula in payroll. */
+    public const STATUTORY = [
+        ['code' => 'PF', 'name' => 'Provident Fund', 'type' => 'deduction', 'calculation' => 'statutory', 'value' => 0, 'sort_order' => 1, 'is_taxable' => false, 'is_prorated' => false, 'is_active' => true],
+        ['code' => 'ESI', 'name' => 'ESI', 'type' => 'deduction', 'calculation' => 'statutory', 'value' => 0, 'sort_order' => 2, 'is_taxable' => false, 'is_prorated' => false, 'is_active' => true],
+    ];
+
     public function run(): void
     {
         $components = [
@@ -24,6 +31,10 @@ class SalaryComponentSeeder extends Seeder
                 ['code' => $component['code']],
                 $component + ['type' => 'earning', 'is_taxable' => true, 'is_prorated' => true, 'is_active' => true],
             );
+        }
+
+        foreach (self::STATUTORY as $component) {
+            SalaryComponent::firstOrCreate(['code' => $component['code']], $component);
         }
     }
 }

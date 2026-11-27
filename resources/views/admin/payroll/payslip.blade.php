@@ -43,7 +43,10 @@
                 <div class="card-head"><h2>Deductions</h2><strong>{{ $money($payslip->total_deductions) }}</strong></div>
                 <ul class="list">
                     @forelse ($deductions as $item)
-                        <li><span>{{ $item->name }} @if ($item->source === 'adjustment')<span class="badge info">one-off</span>@endif</span><span>{{ $money($item->amount) }}</span></li>
+                        @php
+                            $edited = ($item->code === 'PF' && $payslip->employee_pf_override !== null) || ($item->code === 'ESI' && $payslip->employee_esi_override !== null);
+                        @endphp
+                        <li><span>{{ $item->name }} @if ($item->source === 'adjustment')<span class="badge info">one-off</span>@endif @if ($item->source === 'statutory' && $edited)<span class="badge warn">edited</span>@endif</span><span>{{ $money($item->amount) }}</span></li>
                     @empty
                         <li><span class="muted">No deductions</span><span></span></li>
                     @endforelse
@@ -85,6 +88,31 @@
                     </div>
                     @if ($draft)
                         <div class="actions" style="justify-content:flex-end"><button class="btn" type="submit">Update LOP</button></div>
+                    @endif
+                </form>
+            </div>
+
+            <div class="card">
+                <div class="card-head"><h2>PF &amp; ESI</h2><span class="muted small">employee share</span></div>
+                <form method="POST" action="{{ route('admin.payroll.payslips.statutory', [$run, $payslip]) }}" class="card-body form-grid">
+                    @csrf @method('PUT')
+                    <div class="field">
+                        <label for="employee_pf_override">Provident Fund (₹)</label>
+                        <input id="employee_pf_override" type="number" name="employee_pf_override" step="0.01" min="0"
+                               value="{{ old('employee_pf_override', $payslip->employee_pf_override) }}"
+                               placeholder="{{ $payslip->employee_pf_override === null ? number_format((float) $payslip->employee_pf, 2, '.', '').' calculated' : 'Calculated' }}" @disabled(! $draft)>
+                        @error('employee_pf_override')<div class="error">{{ $message }}</div>@enderror
+                    </div>
+                    <div class="field">
+                        <label for="employee_esi_override">ESI (₹)</label>
+                        <input id="employee_esi_override" type="number" name="employee_esi_override" step="0.01" min="0"
+                               value="{{ old('employee_esi_override', $payslip->employee_esi_override) }}"
+                               placeholder="{{ $payslip->employee_esi_override === null ? number_format((float) $payslip->employee_esi, 2, '.', '').' calculated' : 'Calculated' }}" @disabled(! $draft)>
+                        @error('employee_esi_override')<div class="error">{{ $message }}</div>@enderror
+                    </div>
+                    <div class="hint wide">Enter an amount to deduct instead of the calculated one (0 for none), or leave empty to use the calculation. Employer contributions and PF wages stay as calculated. An overridden PF also counts for TDS and the PF ECR file.</div>
+                    @if ($draft)
+                        <div class="actions wide" style="justify-content:flex-end"><button class="btn" type="submit">Update PF &amp; ESI</button></div>
                     @endif
                 </form>
             </div>

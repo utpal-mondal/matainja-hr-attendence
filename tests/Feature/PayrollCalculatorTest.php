@@ -21,14 +21,24 @@ class PayrollCalculatorTest extends TestCase
 {
     private const NO_YTD = ['taxable' => 0.0, 'tds' => 0.0, 'pf' => 0.0, 'pt' => 0.0];
 
-    /** @param  array<string, float>  $parts  code => monthly amount */
-    private function structure(array $parts): StaffSalaryStructure
+    /**
+     * @param  array<string, float>  $earnings  code => monthly amount
+     * @param  list<string>  $statutory  PF / ESI components the salary includes
+     */
+    private function structure(array $earnings, array $statutory = ['PF', 'ESI']): StaffSalaryStructure
     {
-        $structure = new StaffSalaryStructure(['monthly_gross' => array_sum($parts)]);
-        $items = collect($parts)->map(fn ($amount, $code) => new StaffSalaryStructureItem([
+        $structure = new StaffSalaryStructure(['monthly_gross' => array_sum($earnings)]);
+        $items = collect($earnings)->map(fn ($amount, $code) => new StaffSalaryStructureItem([
             'code' => $code, 'name' => $code, 'type' => 'earning', 'monthly_amount' => $amount,
             'is_taxable' => true, 'is_prorated' => true, 'sort_order' => 0,
         ]))->values();
+        foreach ($statutory as $code) {
+            // The stored amount is only the full-month estimate; payroll works it out again.
+            $items->push(new StaffSalaryStructureItem([
+                'code' => $code, 'name' => $code === 'PF' ? 'Provident Fund' : 'ESI', 'type' => 'deduction', 'monthly_amount' => 1,
+                'is_taxable' => false, 'is_prorated' => false, 'sort_order' => 0,
+            ]));
+        }
         $structure->setRelation('items', new EloquentCollection($items));
 
         return $structure;
@@ -77,8 +87,29 @@ class PayrollCalculatorTest extends TestCase
         $this->assertSame(1250.0, $result['employer_eps']);
         $this->assertSame(0.0, $result['professional_tax']);
 
-        $profile->pf_applicable = false;
-        $this->assertSame(0.0, $this->calculate($structure, profile: $profile)['employee_pf']);
+    }
+
+    public function test_pf_and_esi_are_only_deducted_when_the_salary_includes_their_components(): void
+    {
+        $earnings = ['BASIC' => 10000, 'HRA' => 4000, 'SPECIAL' => 6000];
+
+        $none = $this->calculate($this->structure($earnings, statutory: []));
+        $this->assertSame(0.0, $none['employee_pf']);
+        $this->assertSame(0.0, $none['employer_pf']);
+        $this->assertSame(0.0, $none['employee_esi']);
+        $this->assertSame(0.0, $none['employer_esi']);
+        $this->assertNotContains('PF', array_column($none['items'], 'code'));
+
+        $esiOnly = $this->calculate($this->structure($earnings, statutory: ['ESI']));
+        $this->assertSame(0.0, $esiOnly['employee_pf']);
+        $this->assertSame(150.0, $esiOnly['employee_esi']);
+
+        // The formula is used, not the amount stored on the salary, and each appears once.
+        $both = $this->calculate($this->structure($earnings));
+        $this->assertSame(1200.0, $both['employee_pf']);
+        $this->assertSame(150.0, $both['employee_esi']);
+        $this->assertSame(1, count(array_keys(array_column($both['items'], 'code'), 'PF')));
+        $this->assertSame(1350.0 + 130.0, $both['total_deductions']);
     }
 
     public function test_tds_spreads_the_projected_annual_tax_over_the_months_left(): void

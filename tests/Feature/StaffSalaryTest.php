@@ -47,6 +47,54 @@ class StaffSalaryTest extends TestCase
         $this->assertSame(9000.0, $amounts[$ids['SPECIAL']]);
     }
 
+    public function test_split_gives_pf_and_esi_their_statutory_full_month_amounts(): void
+    {
+        $ids = $this->ids();
+        $service = app(SalaryStructureService::class);
+
+        $small = $service->split(20000, SalaryComponent::ordered()->get());
+        $this->assertSame(1200.0, $small[$ids['PF']]);   // 12% of Basic 10,000
+        $this->assertSame(150.0, $small[$ids['ESI']]);   // 0.75% of 20,000
+
+        $large = $service->split(40000, SalaryComponent::ordered()->get());
+        $this->assertSame(1800.0, $large[$ids['PF']]);   // Basic 20,000 capped at 15,000
+        $this->assertSame(0.0, $large[$ids['ESI']]);     // gross above 21,000
+        $this->assertSame(2400.0, $service->split(40000, SalaryComponent::ordered()->get(), pfOnFullBasic: true)[$ids['PF']]);
+    }
+
+    public function test_revision_recalculates_pf_and_esi_and_leaves_out_those_set_to_zero(): void
+    {
+        $ids = $this->ids();
+
+        $this->post(route('admin.staff.salary.store', $this->staff), [
+            'effective_from' => '2026-04-01',
+            'amounts' => [$ids['BASIC'] => 8000, $ids['HRA'] => 3200, $ids['SPECIAL'] => 4800, $ids['PF'] => 5, $ids['ESI'] => 0],
+        ])->assertSessionHasNoErrors();
+
+        $items = $this->staff->salaryStructures()->sole()->items->keyBy('code');
+        $this->assertSame('960.00', $items['PF']->monthly_amount);
+        $this->assertSame('deduction', $items['PF']->type);
+        $this->assertArrayNotHasKey('ESI', $items->all());
+        $this->assertSame('16000.00', $this->staff->salaryStructures()->sole()->monthly_gross);
+    }
+
+    public function test_pf_and_esi_codes_must_use_the_statutory_rule(): void
+    {
+        SalaryComponent::whereIn('code', ['PF', 'ESI'])->delete();
+
+        $this->post(route('admin.org.store', 'salary-components'), [
+            'name' => 'PF', 'code' => 'pf', 'type' => 'deduction', 'calculation' => 'fixed', 'value' => 1800, 'sort_order' => 1,
+        ])->assertSessionHasErrors('calculation');
+        $this->post(route('admin.org.store', 'salary-components'), [
+            'name' => 'Canteen', 'code' => 'CANTEEN', 'type' => 'deduction', 'calculation' => 'statutory', 'value' => 0, 'sort_order' => 1,
+        ])->assertSessionHasErrors('calculation');
+        $this->post(route('admin.org.store', 'salary-components'), [
+            'name' => 'ESI', 'code' => 'ESI', 'type' => 'deduction', 'calculation' => 'statutory', 'value' => 0, 'sort_order' => 2, 'is_active' => '1',
+        ])->assertSessionHasNoErrors();
+
+        $this->get(route('admin.org.index', 'salary-components'))->assertOk()->assertSee('0.75% of earnings (gross up to ₹21,000)');
+    }
+
     public function test_balance_never_goes_negative_when_fixed_parts_exceed_gross(): void
     {
         $conveyance = SalaryComponent::create(['name' => 'Conveyance', 'code' => 'CONV', 'type' => 'earning', 'calculation' => 'fixed', 'value' => 9000]);
@@ -117,7 +165,7 @@ class StaffSalaryTest extends TestCase
     {
         $this->put(route('admin.staff.salary.profile', $this->staff), [
             'pan' => 'abcde1234f', 'uan' => '100123456789', 'tax_regime' => 'old',
-            'pf_applicable' => '1', 'esi_applicable' => '0', 'pt_applicable' => '1',
+            'pf_on_full_basic' => '0', 'pt_applicable' => '0',
             'bank_name' => 'SBI', 'bank_account_number' => '1234 5678 9012', 'bank_ifsc' => 'sbin0001234',
         ])->assertRedirect(route('admin.staff.salary', $this->staff))->assertSessionHasNoErrors();
 
@@ -125,7 +173,7 @@ class StaffSalaryTest extends TestCase
         $this->assertSame('ABCDE1234F', $profile->pan);
         $this->assertSame('SBIN0001234', $profile->bank_ifsc);
         $this->assertSame('123456789012', $profile->bank_account_number);
-        $this->assertFalse($profile->esi_applicable);
+        $this->assertFalse($profile->pt_applicable);
         $this->assertFalse($profile->pf_on_full_basic);
         $this->assertNotSame('123456789012', DB::table('staff_payroll_profiles')->value('bank_account_number'));
         $this->assertArrayNotHasKey('bank_account_number', $profile->toArray());
