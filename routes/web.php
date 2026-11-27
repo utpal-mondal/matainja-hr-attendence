@@ -15,9 +15,10 @@ Route::get('/', fn () => redirect()->route('login'));
 Route::middleware('guest')->group(function () {
     Route::get('/login', [LoginController::class, 'showLogin'])->name('login');
     Route::post('/login', [LoginController::class, 'login'])->middleware('throttle:6,1')->name('login.attempt');
-    Route::get('/github-pull-number', function () {
-        return 110;
-    });
+});
+
+Route::get('/github-pull-number', function () {
+    return 111;
 });
 // Old sign-in addresses, kept so bookmarks still work.
 Route::redirect('/admin/login', '/login');
