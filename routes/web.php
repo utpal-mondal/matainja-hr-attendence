@@ -135,6 +135,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/settings', [Admin\SettingController::class, 'index'])->name('settings.index');
         Route::put('/settings', [Admin\SettingController::class, 'update'])->name('settings.update');
         Route::get('/audit-log', [Admin\AuditLogController::class, 'index'])->name('audit.index');
+
+        // Command runner (Artisan only, audit-logged)
+        Route::get('/console', [Admin\ConsoleController::class, 'index'])->name('console.index');
+        Route::post('/console', [Admin\ConsoleController::class, 'run'])->name('console.run');
     });
 });
 

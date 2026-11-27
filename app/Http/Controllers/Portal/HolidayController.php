@@ -20,7 +20,7 @@ class HolidayController extends PortalController
             'year' => $year,
             'currentYear' => $currentYear,
             'today' => $this->today(),
-            'holidays' => $this->holidays()->whereYear('holiday_date', $year)->get(),
+            'holidays' => $this->holidaysInYear($year),
         ]);
     }
 }

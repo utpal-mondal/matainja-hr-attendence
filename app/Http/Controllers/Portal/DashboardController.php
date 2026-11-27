@@ -39,7 +39,7 @@ class DashboardController extends PortalController
                 'Work from home' => [WfhRequest::where('staff_id', $staff->id)->where('status', 'pending')->count(), route('portal.wfh.index')],
                 'Regularization' => [AttendanceCorrectionRequest::where('staff_id', $staff->id)->where('status', 'pending')->count(), route('portal.regularization.index')],
             ],
-            'upcomingHolidays' => $this->holidays()->whereDate('holiday_date', '>=', $today->toDateString())->limit(5)->get(),
+            'upcomingHolidays' => $this->holidaysBetween($today, $today->addYear()->endOfYear())->take(5),
             'latestPayslip' => Payslip::released()->with('run')->where('payslips.staff_id', $staff->id)->first(),
         ]);
     }

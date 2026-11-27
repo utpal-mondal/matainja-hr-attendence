@@ -6,10 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Holiday;
 use App\Models\Staff;
+use App\Support\ReferenceCache;
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Collection;
 
 /**
  * Base for the employee web portal. Every page works on the signed-in
@@ -36,17 +37,36 @@ abstract class PortalController extends Controller
     }
 
     /**
-     * Holidays that apply to this employee: company-wide ones and their branch's.
+     * Holidays that apply to this employee in one year: company-wide ones and
+     * their branch's, in date order. Cached per year and branch; any holiday
+     * save or delete clears it (see FlushesReferenceCache).
      *
-     * @return Builder<Holiday>
+     * @return Collection<int, Holiday>
      */
-    protected function holidays(): Builder
+    protected function holidaysInYear(int $year): Collection
     {
         $branchId = $this->staff()->branch_id;
 
-        return Holiday::query()
+        return collect(ReferenceCache::get('holidays', fn () => Holiday::query()
             ->where(fn ($q) => $q->whereNull('branch_id')->when($branchId, fn ($q) => $q->orWhere('branch_id', $branchId)))
-            ->orderBy('holiday_date');
+            ->whereYear('holiday_date', $year)
+            ->orderBy('holiday_date')
+            ->get(), "portal:y{$year}:b".($branchId ?? 'none')));
+    }
+
+    /**
+     * The employee's holidays from $from to $to (both inclusive), in date order.
+     *
+     * @return Collection<int, Holiday>
+     */
+    protected function holidaysBetween(CarbonImmutable $from, CarbonImmutable $to): Collection
+    {
+        [$first, $last] = [$from->toDateString(), $to->toDateString()];
+
+        return collect(range($from->year, $to->year))
+            ->flatMap(fn (int $year) => $this->holidaysInYear($year))
+            ->filter(fn (Holiday $h) => $h->holiday_date->toDateString() >= $first && $h->holiday_date->toDateString() <= $last)
+            ->values();
     }
 
     /**

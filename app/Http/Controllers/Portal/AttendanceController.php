@@ -34,7 +34,7 @@ class AttendanceController extends PortalController
         $leaves = $overlapping(LeaveRequest::with('leaveType:id,name'))->get();
         $wfh = $overlapping(WfhRequest::query())->get();
 
-        $holidays = $this->holidays()->whereDate('holiday_date', '>=', $from)->whereDate('holiday_date', '<=', $to)->get()
+        $holidays = $this->holidaysBetween($start, $end)
             ->keyBy(fn ($h) => $h->holiday_date->toDateString());
         $pendingDates = AttendanceCorrectionRequest::where('staff_id', $staff->id)->where('status', 'pending')
             ->whereDate('work_date', '>=', $from)->whereDate('work_date', '<=', $to)->get()
