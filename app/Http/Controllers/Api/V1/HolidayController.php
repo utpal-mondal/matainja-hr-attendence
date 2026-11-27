@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Holiday;
 use App\Support\ApiResponder;
-use App\Support\ReferenceCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,10 +21,9 @@ class HolidayController extends Controller
             $query->where(fn ($q) => $q->where('branch_id', $branchId)->orWhereNull('branch_id'));
         }
 
-        return ApiResponder::success(
-            ReferenceCache::get('holidays', fn () => $query->get(), 'y'.($year ?? 'all').':b'.($branchId ?? 'all')),
-            'Holidays retrieved successfully'
-        );
+        // Read straight from the database (no cache), so a holiday added on
+        // the admin website shows in the app on the next request.
+        return ApiResponder::success($query->get(), 'Holidays retrieved successfully');
     }
 
     public function store(Request $request): JsonResponse
